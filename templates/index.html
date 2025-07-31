@@ -13,14 +13,13 @@
         }
 
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #0f172a 0%, #581c87 50%, #0f172a 100%);
             min-height: 100vh;
-            overflow-x: hidden;
             color: white;
+            overflow-x: hidden;
         }
 
-        /* 背景装饰 */
         .bg-decoration {
             position: fixed;
             top: 0;
@@ -45,7 +44,6 @@
             background: linear-gradient(45deg, #3b82f6, #8b5cf6);
             top: 20%;
             left: 20%;
-            animation-delay: 0s;
         }
 
         .bg-orb:nth-child(2) {
@@ -62,7 +60,6 @@
             50% { transform: translateY(-20px) scale(1.05); }
         }
 
-        /* 玻璃拟态效果 */
         .glass {
             background: rgba(255, 255, 255, 0.1);
             backdrop-filter: blur(20px);
@@ -79,7 +76,6 @@
             transform: translateY(-2px);
         }
 
-        /* 主布局 */
         .container {
             display: flex;
             min-height: 100vh;
@@ -109,7 +105,6 @@
             margin-left: 0;
         }
 
-        /* 侧边栏样式 */
         .sidebar-content {
             padding: 2rem;
             height: 100%;
@@ -171,7 +166,6 @@
             margin-left: auto;
         }
 
-        /* 顶部导航 */
         .header {
             margin: 1.5rem;
             padding: 1.5rem;
@@ -263,12 +257,10 @@
             background: linear-gradient(45deg, #3b82f6, #8b5cf6);
         }
 
-        /* 主内容区域 */
         .content {
             padding: 1.5rem;
         }
 
-        /* 统计卡片 */
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -282,6 +274,10 @@
             display: flex;
             align-items: center;
             gap: 1rem;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
         }
 
         .stat-icon {
@@ -312,7 +308,6 @@
             margin-left: auto;
         }
 
-        /* 内容网格 */
         .content-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
@@ -337,13 +332,13 @@
             font-weight: 600;
         }
 
-        /* 研究者卡片 */
         .researcher-card {
             padding: 1.5rem;
             border-radius: 16px;
             margin-bottom: 1rem;
             cursor: pointer;
             transition: all 0.3s ease;
+            position: relative;
         }
 
         .researcher-card:hover {
@@ -362,6 +357,11 @@
             height: 50px;
             border-radius: 50%;
             background: linear-gradient(45deg, #3b82f6, #8b5cf6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
         }
 
         .researcher-rank {
@@ -393,79 +393,39 @@
             font-size: 0.875rem;
         }
 
-        /* 内容卡片 */
-        .content-card {
-            padding: 1.5rem;
-            border-radius: 16px;
-            margin-bottom: 1rem;
-        }
-
-        .content-header {
+        .researcher-actions {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
             display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            margin-bottom: 1rem;
-        }
-
-        .content-avatar {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background: linear-gradient(45deg, #3b82f6, #8b5cf6);
-        }
-
-        .content-author {
-            font-weight: 600;
-        }
-
-        .content-handle {
-            color: rgba(255, 255, 255, 0.7);
-            font-size: 0.875rem;
-        }
-
-        .content-time {
-            color: rgba(255, 255, 255, 0.5);
-            font-size: 0.875rem;
-            margin-left: auto;
-        }
-
-        .content-text {
-            margin-bottom: 1rem;
-            line-height: 1.6;
-        }
-
-        .content-media {
-            margin-bottom: 1rem;
-            border-radius: 12px;
-            overflow: hidden;
-        }
-
-        .content-media img {
-            width: 100%;
-            height: 200px;
-            object-fit: cover;
-        }
-
-        .content-actions {
-            display: flex;
-            gap: 2rem;
-            color: rgba(255, 255, 255, 0.7);
-            font-size: 0.875rem;
-        }
-
-        .content-action {
-            display: flex;
-            align-items: center;
             gap: 0.5rem;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .researcher-card:hover .researcher-actions {
+            opacity: 1;
+        }
+
+        .action-btn {
+            padding: 0.5rem;
+            border: none;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
             cursor: pointer;
-            transition: color 0.3s ease;
+            transition: all 0.3s ease;
         }
 
-        .content-action:hover {
-            color: #3b82f6;
+        .action-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
         }
 
-        /* 搜索和过滤 */
+        .action-btn.monitoring {
+            background: rgba(34, 197, 94, 0.2);
+            color: #22c55e;
+        }
+
         .controls {
             display: flex;
             gap: 1rem;
@@ -517,7 +477,75 @@
             background: rgba(255, 255, 255, 0.2);
         }
 
-        /* 模态框 */
+        .filter-btn.active {
+            background: linear-gradient(45deg, #3b82f6, #8b5cf6);
+        }
+
+        .content-card {
+            padding: 1.5rem;
+            border-radius: 16px;
+            margin-bottom: 1rem;
+        }
+
+        .content-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .content-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, #3b82f6, #8b5cf6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 0.875rem;
+        }
+
+        .content-author {
+            font-weight: 600;
+        }
+
+        .content-handle {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.875rem;
+        }
+
+        .content-time {
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.875rem;
+            margin-left: auto;
+        }
+
+        .content-text {
+            margin-bottom: 1rem;
+            line-height: 1.6;
+        }
+
+        .content-actions {
+            display: flex;
+            gap: 2rem;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.875rem;
+        }
+
+        .content-action {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+            transition: color 0.3s ease;
+        }
+
+        .content-action:hover {
+            color: #3b82f6;
+        }
+
         .modal {
             position: fixed;
             top: 0;
@@ -570,7 +598,92 @@
             background: rgba(255, 255, 255, 0.1);
         }
 
-        /* 响应式设计 */
+        .btn {
+            padding: 1rem 2rem;
+            border: none;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn-primary {
+            background: linear-gradient(45deg, #3b82f6, #8b5cf6);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 200px;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .status-indicator {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            padding: 1rem;
+            border-radius: 12px;
+            font-size: 0.875rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            z-index: 1000;
+        }
+
+        .status-indicator.success {
+            background: rgba(16, 185, 129, 0.2);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            color: #10b981;
+        }
+
+        .status-indicator.warning {
+            background: rgba(245, 158, 11, 0.2);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            color: #f59e0b;
+        }
+
+        .status-indicator.error {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #ef4444;
+        }
+
+        .hidden { display: none !important; }
+        .show { display: block !important; }
+
         @media (max-width: 768px) {
             .sidebar {
                 transform: translateX(-100%);
@@ -600,42 +713,15 @@
                 min-width: auto;
             }
         }
-
-        /* 加载动画 */
-        .loading {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 200px;
-        }
-
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 3px solid rgba(255, 255, 255, 0.1);
-            border-top: 3px solid #3b82f6;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .hidden { display: none !important; }
-        .show { display: block !important; }
     </style>
 </head>
 <body>
-    <!-- 背景装饰 -->
     <div class="bg-decoration">
         <div class="bg-orb"></div>
         <div class="bg-orb"></div>
     </div>
 
     <div class="container">
-        <!-- 侧边栏 -->
         <aside class="sidebar glass" id="sidebar">
             <div class="sidebar-content">
                 <div class="logo">
@@ -660,14 +746,14 @@
                             <a href="#" class="nav-link" data-view="researchers">
                                 <i class="fas fa-users"></i>
                                 <span>研究者</span>
-                                <span class="nav-badge" id="researcher-count">100</span>
+                                <span class="nav-badge" id="researcher-count">-</span>
                             </a>
                         </li>
                         <li class="nav-item">
                             <a href="#" class="nav-link" data-view="content">
                                 <i class="fas fa-stream"></i>
                                 <span>X内容</span>
-                                <span class="nav-badge" id="content-count">2.3K</span>
+                                <span class="nav-badge" id="content-count">-</span>
                             </a>
                         </li>
                         <li class="nav-item">
@@ -698,9 +784,7 @@
             </div>
         </aside>
 
-        <!-- 主内容 -->
         <main class="main-content" id="mainContent">
-            <!-- 顶部导航 -->
             <header class="header glass">
                 <div class="header-left">
                     <button class="menu-toggle" id="menuToggle">
@@ -714,7 +798,7 @@
                 <div class="header-right">
                     <button class="notification-btn glass">
                         <i class="fas fa-bell"></i>
-                        <span class="notification-badge">3</span>
+                        <span class="notification-badge" id="notification-count">0</span>
                     </button>
                     <div class="user-profile">
                         <div class="user-avatar"></div>
@@ -726,7 +810,6 @@
                 </div>
             </header>
 
-            <!-- 动态内容区域 -->
             <div class="content" id="dynamicContent">
                 <!-- 内容将通过JavaScript动态加载 -->
             </div>
@@ -762,7 +845,7 @@
                     <i class="fas fa-cloud-upload-alt" style="font-size: 3rem; color: rgba(255,255,255,0.5); margin-bottom: 1rem;"></i>
                     <p style="margin-bottom: 1rem;">拖拽Excel文件到此处或点击选择</p>
                     <input type="file" id="excelFile" accept=".xlsx,.xls" style="display: none;">
-                    <button class="filter-btn" onclick="document.getElementById('excelFile').click()">
+                    <button class="btn btn-secondary" onclick="document.getElementById('excelFile').click()">
                         选择文件
                     </button>
                 </div>
@@ -774,12 +857,19 @@
         </div>
     </div>
 
+    <!-- 状态指示器 -->
+    <div class="status-indicator success glass" id="statusIndicator">
+        <i class="fas fa-check-circle"></i>
+        <span id="statusText">系统初始化中...</span>
+    </div>
+
     <script>
-        // 应用状态
+        // 全局状态
         let currentView = 'dashboard';
         let researchers = [];
         let content = [];
         let analytics = {};
+        let apiStatus = 'disconnected';
 
         // DOM元素
         const sidebar = document.getElementById('sidebar');
@@ -790,17 +880,27 @@
         const navLinks = document.querySelectorAll('.nav-link');
         const researcherModal = document.getElementById('researcherModal');
         const uploadModal = document.getElementById('uploadModal');
+        const statusIndicator = document.getElementById('statusIndicator');
+        const statusText = document.getElementById('statusText');
 
         // 初始化应用
         document.addEventListener('DOMContentLoaded', function() {
+            updateStatus('系统初始化中...', 'warning');
             initializeApp();
             bindEvents();
         });
 
         function initializeApp() {
-            loadAnalytics();
-            loadResearchers();
-            renderCurrentView();
+            loadAnalytics()
+                .then(() => loadResearchers())
+                .then(() => {
+                    updateStatus('系统运行正常', 'success');
+                    renderCurrentView();
+                })
+                .catch(error => {
+                    console.error('初始化失败:', error);
+                    updateStatus('系统初始化失败', 'error');
+                });
         }
 
         function bindEvents() {
@@ -843,11 +943,11 @@
 
         function switchView(view) {
             currentView = view;
-
+            
             // 更新导航状态
             navLinks.forEach(link => link.classList.remove('active'));
             document.querySelector(`[data-view="${view}"]`).classList.add('active');
-
+            
             // 更新页面标题
             const titles = {
                 dashboard: '仪表板',
@@ -856,7 +956,7 @@
                 analytics: '数据分析'
             };
             pageTitle.textContent = titles[view];
-
+            
             renderCurrentView();
         }
 
@@ -877,6 +977,72 @@
             }
         }
 
+        // API调用函数
+        async function apiCall(endpoint, options = {}) {
+            try {
+                const response = await fetch(endpoint, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...options.headers
+                    },
+                    ...options
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                return await response.json();
+            } catch (error) {
+                console.error(`API调用失败 ${endpoint}:`, error);
+                throw error;
+            }
+        }
+
+        async function loadAnalytics() {
+            try {
+                analytics = await apiCall('/api/analytics');
+                
+                // 更新统计数字
+                document.getElementById('researcher-count').textContent = analytics.total_researchers || '0';
+                document.getElementById('content-count').textContent = analytics.total_content || '0';
+                
+                // 更新API状态
+                apiStatus = analytics.api_status || 'disconnected';
+                
+                if (apiStatus === 'connected') {
+                    updateStatus('Twitter API已连接', 'success');
+                } else {
+                    updateStatus('使用模拟数据运行', 'warning');
+                }
+                
+            } catch (error) {
+                console.error('加载分析数据失败:', error);
+                updateStatus('数据加载失败', 'error');
+            }
+        }
+
+        async function loadResearchers() {
+            try {
+                researchers = await apiCall('/api/researchers');
+                console.log('研究者数据加载成功:', researchers.length);
+            } catch (error) {
+                console.error('加载研究者数据失败:', error);
+                // 使用备用数据
+                researchers = [];
+            }
+        }
+
+        async function loadContent() {
+            try {
+                content = await apiCall('/api/content?limit=50');
+                console.log('内容数据加载成功:', content.length);
+            } catch (error) {
+                console.error('加载内容数据失败:', error);
+                content = [];
+            }
+        }
+
         function renderDashboard() {
             dynamicContent.innerHTML = `
                 <div class="stats-grid">
@@ -885,7 +1051,7 @@
                             <i class="fas fa-users"></i>
                         </div>
                         <div class="stat-info">
-                            <h3>${analytics.total_researchers || 100}</h3>
+                            <h3>${analytics.total_researchers || 0}</h3>
                             <p>研究者总数</p>
                         </div>
                         <span class="stat-change">+12%</span>
@@ -895,7 +1061,7 @@
                             <i class="fas fa-stream"></i>
                         </div>
                         <div class="stat-info">
-                            <h3>${analytics.total_content || '2,347'}</h3>
+                            <h3>${analytics.total_content || 0}</h3>
                             <p>收集内容</p>
                         </div>
                         <span class="stat-change">+23%</span>
@@ -905,7 +1071,7 @@
                             <i class="fas fa-heart"></i>
                         </div>
                         <div class="stat-info">
-                            <h3>${analytics.total_engagement || '45.2K'}</h3>
+                            <h3>${formatNumber(analytics.total_engagement || 0)}</h3>
                             <p>互动数据</p>
                         </div>
                         <span class="stat-change">+18%</span>
@@ -915,10 +1081,10 @@
                             <i class="fas fa-chart-bar"></i>
                         </div>
                         <div class="stat-info">
-                            <h3>28</h3>
-                            <p>分析报告</p>
+                            <h3>${analytics.monitoring_researchers || 0}</h3>
+                            <p>监控中</p>
                         </div>
-                        <span class="stat-change">+5%</span>
+                        <span class="stat-change">${apiStatus === 'connected' ? '+5%' : '暂停'}</span>
                     </div>
                 </div>
 
@@ -926,19 +1092,38 @@
                     <div class="content-section glass">
                         <div class="section-header">
                             <h3 class="section-title">热门研究者</h3>
+                            <button class="btn btn-secondary" onclick="switchView('researchers')">查看全部</button>
                         </div>
                         <div id="top-researchers">
                             ${renderTopResearchers()}
                         </div>
                     </div>
-
+                    
                     <div class="content-section glass">
                         <div class="section-header">
                             <h3 class="section-title">最新内容</h3>
+                            <button class="btn btn-secondary" onclick="switchView('content')">查看全部</button>
                         </div>
                         <div id="latest-content">
                             ${renderLatestContent()}
                         </div>
+                    </div>
+                </div>
+
+                <div class="content-section glass">
+                    <div class="section-header">
+                        <h3 class="section-title">快速操作</h3>
+                    </div>
+                    <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                        <button class="btn btn-primary" onclick="startMonitoringAll()">
+                            <i class="fas fa-play"></i> 开始监控所有研究者
+                        </button>
+                        <button class="btn btn-secondary" onclick="showUploadModal()">
+                            <i class="fas fa-upload"></i> 上传研究者数据
+                        </button>
+                        <button class="btn btn-secondary" onclick="refreshData()">
+                            <i class="fas fa-sync"></i> 刷新数据
+                        </button>
                     </div>
                 </div>
             `;
@@ -951,8 +1136,11 @@
                         <i class="fas fa-search search-icon"></i>
                         <input type="text" class="search-input" placeholder="搜索研究者..." id="researcherSearch">
                     </div>
-                    <button class="filter-btn">
-                        <i class="fas fa-filter"></i>
+                    <button class="filter-btn" id="filterBtn">
+                        <i class="fas fa-filter"></i> 筛选
+                    </button>
+                    <button class="btn btn-primary" id="startMonitoringBtn">
+                        <i class="fas fa-play"></i> 开始监控选中
                     </button>
                 </div>
 
@@ -970,6 +1158,16 @@
                 filterResearchers(e.target.value);
             });
 
+            // 绑定监控按钮
+            document.getElementById('startMonitoringBtn').addEventListener('click', () => {
+                const selected = getSelectedResearchers();
+                if (selected.length > 0) {
+                    startMonitoring(selected);
+                } else {
+                    alert('请先选择要监控的研究者');
+                }
+            });
+
             // 模拟加载
             setTimeout(() => {
                 document.getElementById('researchers-loading').style.display = 'none';
@@ -978,34 +1176,38 @@
         }
 
         function renderContent() {
-            dynamicContent.innerHTML = `
-                <div class="controls">
-                    <div class="search-box">
-                        <i class="fas fa-search search-icon"></i>
-                        <input type="text" class="search-input" placeholder="搜索内容...">
+            loadContent().then(() => {
+                dynamicContent.innerHTML = `
+                    <div class="controls">
+                        <div class="search-box">
+                            <i class="fas fa-search search-icon"></i>
+                            <input type="text" class="search-input" placeholder="搜索内容...">
+                        </div>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button class="filter-btn active" data-filter="all">全部</button>
+                            <button class="filter-btn" data-filter="text">文字</button>
+                            <button class="filter-btn" data-filter="images">图片</button>
+                            <button class="filter-btn" data-filter="videos">视频</button>
+                        </div>
+                        <button class="btn btn-primary" onclick="refreshContent()">
+                            <i class="fas fa-sync"></i> 刷新内容
+                        </button>
                     </div>
-                    <div style="display: flex; gap: 0.5rem;">
-                        <button class="filter-btn active" data-filter="all">全部</button>
-                        <button class="filter-btn" data-filter="text">文字</button>
-                        <button class="filter-btn" data-filter="images">图片</button>
-                        <button class="filter-btn" data-filter="videos">视频</button>
+
+                    <div class="content-grid" id="content-grid">
+                        ${renderContentCards()}
                     </div>
-                </div>
+                `;
 
-                <div class="loading" id="content-loading">
-                    <div class="spinner"></div>
-                </div>
-
-                <div class="content-grid" id="content-grid" style="display: none;">
-                    ${renderContentCards()}
-                </div>
-            `;
-
-            // 模拟加载
-            setTimeout(() => {
-                document.getElementById('content-loading').style.display = 'none';
-                document.getElementById('content-grid').style.display = 'grid';
-            }, 1000);
+                // 绑定筛选按钮
+                document.querySelectorAll('[data-filter]').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        document.querySelectorAll('[data-filter]').forEach(b => b.classList.remove('active'));
+                        e.target.classList.add('active');
+                        filterContent(e.target.dataset.filter);
+                    });
+                });
+            });
         }
 
         function renderAnalytics() {
@@ -1013,7 +1215,44 @@
                 <div class="content-grid">
                     <div class="content-section glass">
                         <div class="section-header">
-                            <h3 class="section-title">内容类型分布</h3>
+                            <h3 class="section-title">API状态</h3>
+                        </div>
+                        <div style="text-align: center; padding: 2rem;">
+                            <div style="font-size: 3rem; margin-bottom: 1rem;">
+                                ${apiStatus === 'connected' ? '🟢' : '🟡'}
+                            </div>
+                            <h3 style="margin-bottom: 1rem;">
+                                ${apiStatus === 'connected' ? 'Twitter API 已连接' : '使用模拟数据'}
+                            </h3>
+                            <p style="color: rgba(255,255,255,0.7);">
+                                ${apiStatus === 'connected' ? '正在实时获取数据' : '请配置 Twitter Bearer Token'}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="content-section glass">
+                        <div class="section-header">
+                            <h3 class="section-title">监控状态</h3>
+                        </div>
+                        <div style="padding: 1rem;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 1rem;">
+                                <span>活跃监控</span>
+                                <strong>${analytics.monitoring_researchers || 0} 位研究者</strong>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 1rem;">
+                                <span>监控状态</span>
+                                <strong>${analytics.monitoring_active ? '✅ 运行中' : '⏸️ 暂停'}</strong>
+                            </div>
+                            <div style="display: flex; justify-content: space-between;">
+                                <span>上次更新</span>
+                                <strong>刚刚</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="content-section glass">
+                        <div class="section-header">
+                            <h3 class="section-title">内容统计</h3>
                         </div>
                         <div style="margin-top: 2rem;">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
@@ -1048,13 +1287,10 @@
 
                     <div class="content-section glass">
                         <div class="section-header">
-                            <h3 class="section-title">互动趋势</h3>
+                            <h3 class="section-title">国家分布</h3>
                         </div>
-                        <div style="height: 200px; display: flex; align-items: end; justify-content: space-between; gap: 0.5rem; margin-top: 2rem;">
-                            ${Array.from({length: 12}, (_, i) => {
-                                const height = Math.random() * 80 + 20;
-                                return `<div style="flex: 1; background: linear-gradient(180deg, #3b82f6, #8b5cf6); height: ${height}%; border-radius: 4px 4px 0 0; transition: all 0.3s ease; cursor: pointer;" onmouseover="this.style.background='linear-gradient(180deg, #60a5fa, #a78bfa)'" onmouseout="this.style.background='linear-gradient(180deg, #3b82f6, #8b5cf6)'"></div>`;
-                            }).join('')}
+                        <div style="margin-top: 2rem;">
+                            ${renderCountryDistribution()}
                         </div>
                     </div>
                 </div>
@@ -1062,11 +1298,15 @@
         }
 
         function renderTopResearchers() {
-            const topResearchers = researchers.slice(0, 3);
+            const topResearchers = researchers.slice(0, 5);
+            if (topResearchers.length === 0) {
+                return '<p style="text-align: center; color: rgba(255,255,255,0.7);">暂无数据</p>';
+            }
+
             return topResearchers.map(researcher => `
                 <div class="researcher-card glass glass-hover" onclick="showResearcherModal(${researcher.id})">
                     <div class="researcher-header">
-                        <div class="researcher-avatar"></div>
+                        <div class="researcher-avatar">${getInitials(researcher.name)}</div>
                         <div>
                             <h4>${researcher.name}</h4>
                             <p style="color: rgba(255,255,255,0.7); font-size: 0.875rem;">${researcher.company}</p>
@@ -1078,48 +1318,48 @@
         }
 
         function renderLatestContent() {
-            // 模拟最新内容
-            const latestContent = [
-                {
-                    author: 'Ilya Sutskever',
-                    handle: '@ilyasut',
-                    content: 'The future of AGI depends on our ability to understand and control emergent behaviors...',
-                    time: '2h'
-                },
-                {
-                    author: 'Geoffrey Hinton',
-                    handle: '@geoffreyhinton',
-                    content: 'Reflections on 40 years of neural network research...',
-                    time: '4h'
-                },
-                {
-                    author: 'Andrej Karpathy',
-                    handle: '@karpathy',
-                    content: 'New video explaining the mathematics behind attention mechanisms!',
-                    time: '6h'
-                }
-            ];
+            if (content.length === 0) {
+                return '<p style="text-align: center; color: rgba(255,255,255,0.7);">暂无内容</p>';
+            }
 
-            return latestContent.map(item => `
+            return content.slice(0, 3).map(item => `
                 <div class="content-card glass glass-hover">
                     <div class="content-header">
-                        <div class="content-avatar"></div>
+                        <div class="content-avatar">${getInitials(item.author_name)}</div>
                         <div>
-                            <div class="content-author">${item.author}</div>
-                            <div class="content-handle">${item.handle}</div>
+                            <div class="content-author">${item.author_name}</div>
+                            <div class="content-handle">${item.author_handle}</div>
                         </div>
-                        <div class="content-time">${item.time}</div>
+                        <div class="content-time">${formatTime(item.created_at)}</div>
                     </div>
-                    <div class="content-text">${item.content}</div>
+                    <div class="content-text">${truncateText(item.content, 100)}</div>
                 </div>
             `).join('');
         }
 
         function renderResearcherCards() {
+            if (researchers.length === 0) {
+                return '<p style="text-align: center; color: rgba(255,255,255,0.7); grid-column: 1/-1;">暂无研究者数据</p>';
+            }
+
             return researchers.map(researcher => `
-                <div class="researcher-card glass glass-hover" onclick="showResearcherModal(${researcher.id})">
+                <div class="researcher-card glass glass-hover" data-id="${researcher.id}">
+                    <div class="researcher-actions">
+                        <button class="action-btn ${researcher.is_monitoring ? 'monitoring' : ''}" 
+                                onclick="toggleMonitoring(${researcher.id})" 
+                                title="${researcher.is_monitoring ? '停止监控' : '开始监控'}">
+                            <i class="fas ${researcher.is_monitoring ? 'fa-pause' : 'fa-play'}"></i>
+                        </button>
+                        <button class="action-btn" onclick="fetchContent(${researcher.id})" title="立即获取内容">
+                            <i class="fas fa-sync"></i>
+                        </button>
+                        <button class="action-btn" onclick="showResearcherModal(${researcher.id})" title="查看详情">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    </div>
+                    
                     <div class="researcher-header">
-                        <div class="researcher-avatar"></div>
+                        <div class="researcher-avatar">${getInitials(researcher.name)}</div>
                         <div>
                             <h4>${researcher.name}</h4>
                             <p style="color: rgba(255,255,255,0.7); font-size: 0.875rem;">${researcher.x_account}</p>
@@ -1132,114 +1372,172 @@
                     </div>
                     <div class="researcher-research">${researcher.research_focus}</div>
                     <div class="researcher-stats">
-                        <span><strong>${researcher.followers_count || '127K'}</strong> 关注者</span>
-                        <span><strong>${researcher.following_count || '89'}</strong> 正在关注</span>
+                        <span><strong>${researcher.followers_count}</strong> 关注者</span>
+                        <span><strong>${researcher.following_count}</strong> 正在关注</span>
+                        ${researcher.is_monitoring ? '<span style="color: #22c55e;"><i class="fas fa-circle"></i> 监控中</span>' : ''}
                     </div>
                 </div>
             `).join('');
         }
 
         function renderContentCards() {
-            // 模拟内容数据
-            const mockContent = [
-                {
-                    id: 1,
-                    author: 'Ilya Sutskever',
-                    handle: '@ilyasut',
-                    content: 'The future of AGI depends on our ability to understand and control emergent behaviors in large-scale neural networks. Working on some exciting breakthroughs at SSI! 🧠🚀',
-                    time: '2h',
-                    likes: 1247,
-                    retweets: 389,
-                    replies: 156
-                },
-                {
-                    id: 2,
-                    author: 'Geoffrey Hinton',
-                    handle: '@geoffreyhinton',
-                    content: 'Reflections on 40 years of neural network research. The journey from backpropagation to transformers has been remarkable.',
-                    time: '4h',
-                    likes: 2103,
-                    retweets: 654,
-                    replies: 278,
-                    image: 'https://via.placeholder.com/500x300?text=Research+Image'
-                },
-                {
-                    id: 3,
-                    author: 'Andrej Karpathy',
-                    handle: '@karpathy',
-                    content: 'New video explaining the mathematics behind attention mechanisms! 📹✨',
-                    time: '6h',
-                    likes: 3456,
-                    retweets: 987,
-                    replies: 445,
-                    video: true
-                }
-            ];
+            if (content.length === 0) {
+                return '<p style="text-align: center; color: rgba(255,255,255,0.7); grid-column: 1/-1;">暂无内容数据</p>';
+            }
 
-            return mockContent.map(item => `
+            return content.map(item => `
                 <div class="content-card glass glass-hover">
                     <div class="content-header">
-                        <div class="content-avatar"></div>
+                        <div class="content-avatar">${getInitials(item.author_name)}</div>
                         <div>
-                            <div class="content-author">${item.author}</div>
-                            <div class="content-handle">${item.handle}</div>
+                            <div class="content-author">${item.author_name}</div>
+                            <div class="content-handle">${item.author_handle}</div>
                         </div>
-                        <div class="content-time">${item.time}</div>
+                        <div class="content-time">${formatTime(item.created_at)}</div>
                     </div>
                     <div class="content-text">${item.content}</div>
-                    ${item.image ? `<div class="content-media"><img src="${item.image}" alt="Content image"></div>` : ''}
-                    ${item.video ? `<div class="content-media" style="position: relative; background: #000; display: flex; align-items: center; justify-content: center; height: 200px; border-radius: 12px;"><i class="fas fa-play" style="font-size: 3rem; color: rgba(255,255,255,0.8);"></i></div>` : ''}
                     <div class="content-actions">
                         <div class="content-action">
                             <i class="fas fa-comment"></i>
-                            <span>${item.replies}</span>
+                            <span>${item.replies_count || 0}</span>
                         </div>
                         <div class="content-action">
                             <i class="fas fa-retweet"></i>
-                            <span>${item.retweets}</span>
+                            <span>${item.retweets_count || 0}</span>
                         </div>
                         <div class="content-action">
                             <i class="fas fa-heart"></i>
-                            <span>${item.likes}</span>
+                            <span>${item.likes_count || 0}</span>
                         </div>
                         <div class="content-action">
-                            <i class="fas fa-share"></i>
+                            <i class="fas fa-download"></i>
                         </div>
                     </div>
                 </div>
             `).join('');
         }
 
-        // API调用函数
-        async function loadResearchers() {
+        function renderCountryDistribution() {
+            if (!analytics.country_distribution) {
+                return '<p style="text-align: center; color: rgba(255,255,255,0.7);">暂无数据</p>';
+            }
+
+            const countries = Object.entries(analytics.country_distribution)
+                .sort(([,a], [,b]) => b - a)
+                .slice(0, 5);
+
+            return countries.map(([country, count]) => `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <span>${country}</span>
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <div style="width: 100px; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden;">
+                            <div style="width: ${(count / Math.max(...Object.values(analytics.country_distribution))) * 100}%; height: 100%; background: linear-gradient(90deg, #3b82f6, #8b5cf6);"></div>
+                        </div>
+                        <span>${count}</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // 操作函数
+        async function toggleMonitoring(researcherId) {
             try {
-                const response = await fetch('/api/researchers');
-                researchers = await response.json();
-                document.getElementById('researcher-count').textContent = researchers.length;
+                const researcher = researchers.find(r => r.id === researcherId);
+                if (!researcher) return;
+
+                const endpoint = researcher.is_monitoring ? '/api/stop_monitoring' : '/api/start_monitoring';
+                const result = await apiCall(endpoint, {
+                    method: 'POST',
+                    body: JSON.stringify({ researcher_ids: [researcherId] })
+                });
+
+                // 更新本地状态
+                researcher.is_monitoring = !researcher.is_monitoring;
+                
+                updateStatus(result.message, 'success');
+                
+                // 重新渲染当前视图
+                if (currentView === 'researchers') {
+                    document.getElementById('researchers-grid').innerHTML = renderResearcherCards();
+                }
+
             } catch (error) {
-                console.error('加载研究者数据失败:', error);
-                // 使用模拟数据
-                researchers = [
-                    { id: 1, rank: 1, name: 'Ilya Sutskever', country: 'Canada', company: 'SSI', research_focus: 'AlexNet、Seq2seq、深度学习', x_account: '@ilyasut' },
-                    { id: 2, rank: 2, name: 'Noam Shazeer', country: 'USA', company: 'Google Deepmind', research_focus: '注意力机制即你所需要、混合专家模型、角色AI', x_account: '@noamshazeer' },
-                    { id: 3, rank: 3, name: 'Geoffrey Hinton', country: 'UK', company: 'University of Toronto', research_focus: '反向传播、玻尔兹曼机、深度学习', x_account: '@geoffreyhinton' },
-                    { id: 4, rank: 4, name: 'Alec Radford', country: 'USA', company: 'Thinking Machines', research_focus: '生成对抗网络、GPT、CLIP', x_account: '@alec_radford' },
-                    { id: 5, rank: 5, name: 'Andrej Karpathy', country: 'Slovakia', company: 'Tesla', research_focus: '计算机视觉、神经网络、自动驾驶', x_account: '@karpathy' }
-                ];
+                console.error('切换监控状态失败:', error);
+                updateStatus('操作失败: ' + error.message, 'error');
             }
         }
 
-        async function loadAnalytics() {
+        async function fetchContent(researcherId) {
             try {
-                const response = await fetch('/api/analytics');
-                analytics = await response.json();
+                updateStatus('正在获取最新内容...', 'warning');
+                
+                const result = await apiCall(`/api/fetch_content/${researcherId}`, {
+                    method: 'POST'
+                });
+
+                updateStatus(result.message, 'success');
+                
+                // 刷新内容数据
+                await loadContent();
+                
             } catch (error) {
-                console.error('加载分析数据失败:', error);
-                analytics = {
-                    total_researchers: 100,
-                    total_content: '2,347',
-                    total_engagement: '45.2K'
-                };
+                console.error('获取内容失败:', error);
+                updateStatus('获取内容失败: ' + error.message, 'error');
+            }
+        }
+
+        async function startMonitoringAll() {
+            try {
+                const allIds = researchers.map(r => r.id);
+                if (allIds.length === 0) {
+                    alert('没有研究者可以监控');
+                    return;
+                }
+
+                updateStatus('正在启动监控...', 'warning');
+                
+                const result = await apiCall('/api/start_monitoring', {
+                    method: 'POST',
+                    body: JSON.stringify({ researcher_ids: allIds })
+                });
+
+                // 更新本地状态
+                researchers.forEach(r => r.is_monitoring = true);
+                
+                updateStatus(`成功启动监控 ${result.monitoring_count} 位研究者`, 'success');
+                
+                // 刷新分析数据
+                await loadAnalytics();
+                
+            } catch (error) {
+                console.error('启动监控失败:', error);
+                updateStatus('启动监控失败: ' + error.message, 'error');
+            }
+        }
+
+        async function refreshData() {
+            updateStatus('正在刷新数据...', 'warning');
+            try {
+                await loadAnalytics();
+                await loadResearchers();
+                await loadContent();
+                renderCurrentView();
+                updateStatus('数据刷新完成', 'success');
+            } catch (error) {
+                console.error('刷新数据失败:', error);
+                updateStatus('数据刷新失败', 'error');
+            }
+        }
+
+        async function refreshContent() {
+            updateStatus('正在刷新内容...', 'warning');
+            try {
+                await loadContent();
+                document.getElementById('content-grid').innerHTML = renderContentCards();
+                updateStatus('内容刷新完成', 'success');
+            } catch (error) {
+                console.error('刷新内容失败:', error);
+                updateStatus('内容刷新失败', 'error');
             }
         }
 
@@ -1249,34 +1547,36 @@
                 researcher.company.toLowerCase().includes(query.toLowerCase()) ||
                 researcher.research_focus.toLowerCase().includes(query.toLowerCase())
             );
-
+            
             const grid = document.getElementById('researchers-grid');
             if (grid) {
-                grid.innerHTML = filteredResearchers.map(researcher => `
-                    <div class="researcher-card glass glass-hover" onclick="showResearcherModal(${researcher.id})">
-                        <div class="researcher-header">
-                            <div class="researcher-avatar"></div>
-                            <div>
-                                <h4>${researcher.name}</h4>
-                                <p style="color: rgba(255,255,255,0.7); font-size: 0.875rem;">${researcher.x_account}</p>
-                            </div>
-                            <span class="researcher-rank">#${researcher.rank}</span>
-                        </div>
-                        <div class="researcher-meta">
-                            <span><i class="fas fa-map-marker-alt"></i> ${researcher.country}</span>
-                            <span><i class="fas fa-building"></i> ${researcher.company}</span>
-                        </div>
-                        <div class="researcher-research">${researcher.research_focus}</div>
-                        <div class="researcher-stats">
-                            <span><strong>${researcher.followers_count || '127K'}</strong> 关注者</span>
-                            <span><strong>${researcher.following_count || '89'}</strong> 正在关注</span>
-                        </div>
-                    </div>
-                `).join('');
+                grid.innerHTML = filteredResearchers.map(researcher => 
+                    renderResearcherCards().find(card => card.includes(`data-id="${researcher.id}"`))
+                ).join('') || '<p style="text-align: center; color: rgba(255,255,255,0.7); grid-column: 1/-1;">没有找到匹配的研究者</p>';
             }
         }
 
-        // 模态框函数
+        function filterContent(type) {
+            // 内容筛选逻辑
+            let filteredContent = content;
+            if (type !== 'all') {
+                filteredContent = content.filter(item => item.content_type === type);
+            }
+            
+            const grid = document.getElementById('content-grid');
+            if (grid) {
+                grid.innerHTML = filteredContent.map(item => renderContentCards().find(card => 
+                    card.includes(item.author_name)
+                )).join('') || '<p style="text-align: center; color: rgba(255,255,255,0.7); grid-column: 1/-1;">没有找到匹配的内容</p>';
+            }
+        }
+
+        function getSelectedResearchers() {
+            // 获取选中的研究者ID列表
+            const checkboxes = document.querySelectorAll('.researcher-card input[type="checkbox"]:checked');
+            return Array.from(checkboxes).map(cb => parseInt(cb.dataset.id));
+        }
+
         function showResearcherModal(researcherId) {
             const researcher = researchers.find(r => r.id === researcherId);
             if (!researcher) return;
@@ -1284,7 +1584,7 @@
             document.getElementById('modal-researcher-name').textContent = researcher.name;
             document.getElementById('modal-researcher-details').innerHTML = `
                 <div class="researcher-header" style="margin-bottom: 2rem;">
-                    <div class="researcher-avatar" style="width: 80px; height: 80px;"></div>
+                    <div class="researcher-avatar" style="width: 80px; height: 80px; font-size: 1.5rem;">${getInitials(researcher.name)}</div>
                     <div style="flex: 1; margin-left: 1rem;">
                         <h2 style="margin-bottom: 0.5rem;">${researcher.name}</h2>
                         <p style="color: #3b82f6; margin-bottom: 1rem;">${researcher.x_account}</p>
@@ -1294,33 +1594,44 @@
                         </div>
                     </div>
                 </div>
-
+                
                 <div style="margin-bottom: 2rem;">
                     <h3 style="margin-bottom: 1rem;">研究方向与成就</h3>
                     <p style="color: rgba(255,255,255,0.8); line-height: 1.6;">${researcher.research_focus}</p>
                 </div>
-
+                
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 2rem;">
                     <div class="glass" style="padding: 1.5rem; border-radius: 12px; text-align: center;">
-                        <h3 style="font-size: 2rem; margin-bottom: 0.5rem;">${researcher.followers_count || '127K'}</h3>
+                        <h3 style="font-size: 2rem; margin-bottom: 0.5rem;">${researcher.followers_count}</h3>
                         <p style="color: rgba(255,255,255,0.7);">关注者</p>
                     </div>
                     <div class="glass" style="padding: 1.5rem; border-radius: 12px; text-align: center;">
-                        <h3 style="font-size: 2rem; margin-bottom: 0.5rem;">${researcher.following_count || '89'}</h3>
+                        <h3 style="font-size: 2rem; margin-bottom: 0.5rem;">${researcher.following_count}</h3>
                         <p style="color: rgba(255,255,255,0.7);">正在关注</p>
                     </div>
                 </div>
 
+                <div style="margin-bottom: 2rem;">
+                    <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+                        <h3>监控状态</h3>
+                        <span style="color: ${researcher.is_monitoring ? '#22c55e' : '#6b7280'};">
+                            <i class="fas fa-circle" style="font-size: 0.5rem;"></i>
+                            ${researcher.is_monitoring ? '监控中' : '未监控'}
+                        </span>
+                    </div>
+                </div>
+                
                 <div style="display: flex; gap: 1rem;">
-                    <button style="flex: 1; background: linear-gradient(45deg, #3b82f6, #8b5cf6); border: none; padding: 1rem; border-radius: 12px; color: white; font-weight: 600; cursor: pointer; transition: all 0.3s ease;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
-                        开始监控
+                    <button class="btn btn-primary" onclick="toggleMonitoring(${researcher.id}); hideResearcherModal();">
+                        <i class="fas ${researcher.is_monitoring ? 'fa-pause' : 'fa-play'}"></i>
+                        ${researcher.is_monitoring ? '停止监控' : '开始监控'}
                     </button>
-                    <button class="glass glass-hover" style="padding: 1rem 1.5rem; border: none; border-radius: 12px; color: white; font-weight: 600; cursor: pointer;">
-                        查看内容
+                    <button class="btn btn-secondary" onclick="fetchContent(${researcher.id}); hideResearcherModal();">
+                        <i class="fas fa-sync"></i> 获取最新内容
                     </button>
                 </div>
             `;
-
+            
             researcherModal.classList.add('show');
         }
 
@@ -1344,25 +1655,79 @@
             formData.append('file', file);
 
             try {
+                updateStatus('正在上传文件...', 'warning');
+                
                 const response = await fetch('/api/upload_excel', {
                     method: 'POST',
                     body: formData
                 });
 
                 const result = await response.json();
-
+                
                 if (response.ok) {
-                    alert(`上传成功！${result.message}`);
+                    updateStatus(`上传成功！${result.message}`, 'success');
                     hideUploadModal();
-                    loadResearchers(); // 重新加载研究者数据
+                    await loadResearchers(); // 重新加载研究者数据
+                    renderCurrentView();
                 } else {
-                    alert(`上传失败：${result.error}`);
+                    updateStatus(`上传失败：${result.error}`, 'error');
                 }
             } catch (error) {
                 console.error('文件上传错误:', error);
-                alert('上传失败，请检查网络连接');
+                updateStatus('上传失败，请检查网络连接', 'error');
             }
         }
+
+        // 工具函数
+        function formatNumber(num) {
+            if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+            if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+            return num.toString();
+        }
+
+        function formatTime(timeStr) {
+            if (!timeStr) return '未知';
+            const date = new Date(timeStr);
+            const now = new Date();
+            const diff = now - date;
+            
+            if (diff < 60000) return '刚刚';
+            if (diff < 3600000) return Math.floor(diff / 60000) + '分钟前';
+            if (diff < 86400000) return Math.floor(diff / 3600000) + '小时前';
+            return Math.floor(diff / 86400000) + '天前';
+        }
+
+        function getInitials(name) {
+            if (!name) return '?';
+            return name.split(' ').map(word => word[0]).join('').toUpperCase().slice(0, 2);
+        }
+
+        function truncateText(text, maxLength) {
+            if (!text) return '';
+            return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+        }
+
+        function updateStatus(message, type = 'success') {
+            statusText.textContent = message;
+            statusIndicator.className = `status-indicator ${type} glass`;
+            
+            // 3秒后如果是成功消息，恢复默认状态
+            if (type === 'success') {
+                setTimeout(() => {
+                    if (statusText.textContent === message) {
+                        statusText.textContent = '系统运行正常';
+                        statusIndicator.className = 'status-indicator success glass';
+                    }
+                }, 3000);
+            }
+        }
+
+        // 定期刷新数据
+        setInterval(() => {
+            if (apiStatus === 'connected') {
+                loadAnalytics();
+            }
+        }, 30000); // 每30秒刷新一次
     </script>
 </body>
 </html>
