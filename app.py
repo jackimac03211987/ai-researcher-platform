@@ -113,6 +113,9 @@ class ResearcherManager:
         conn = sqlite3.connect('research_platform.db')
         cursor = conn.cursor()
         
+        # 开启外键约束
+        cursor.execute("PRAGMA foreign_keys = ON;")
+
         # 研究者表
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS researchers (
@@ -145,7 +148,7 @@ class ResearcherManager:
                 replies_count INTEGER DEFAULT 0,
                 created_at DATETIME,
                 collected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (researcher_id) REFERENCES researchers (id)
+                FOREIGN KEY (researcher_id) REFERENCES researchers (id) ON DELETE CASCADE
             )
         ''')
         
@@ -157,7 +160,7 @@ class ResearcherManager:
                 status TEXT DEFAULT 'active',
                 last_check DATETIME DEFAULT CURRENT_TIMESTAMP,
                 check_interval INTEGER DEFAULT 3600,
-                FOREIGN KEY (researcher_id) REFERENCES researchers (id)
+                FOREIGN KEY (researcher_id) REFERENCES researchers (id) ON DELETE CASCADE
             )
         ''')
         
@@ -364,6 +367,38 @@ def get_researcher_detail(researcher_id):
         'researcher': researcher,
         'recent_content': recent_content
     })
+
+# --- 新增的删除功能 ---
+@app.route('/api/researcher/<int:researcher_id>', methods=['DELETE'])
+def delete_researcher(researcher_id):
+    """删除指定的研究者及其所有相关数据"""
+    try:
+        conn = sqlite3.connect('research_platform.db')
+        cursor = conn.cursor()
+
+        # 开启外键约束，确保级联删除生效
+        cursor.execute("PRAGMA foreign_keys = ON;")
+
+        # 删除研究者，相关内容和监控任务会因为ON DELETE CASCADE被自动删除
+        cursor.execute('DELETE FROM researchers WHERE id = ?', (researcher_id,))
+        
+        conn.commit()
+
+        if cursor.rowcount > 0:
+            logger.info(f"✅ 成功删除研究者 ID: {researcher_id}")
+            return jsonify({'message': f'成功删除研究者 ID: {researcher_id}'}), 200
+        else:
+            logger.warning(f"⚠️ 尝试删除一个不存在的研究者 ID: {researcher_id}")
+            return jsonify({'error': 'Researcher not found'}), 404
+
+    except Exception as e:
+        logger.error(f"❌ 删除研究者 {researcher_id} 时发生错误: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        if conn:
+            conn.close()
+# --- 删除功能结束 ---
+
 
 @app.route('/api/content')
 def get_content():
