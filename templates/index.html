@@ -1,0 +1,1368 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI研究者X内容学习平台</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #581c87 50%, #0f172a 100%);
+            min-height: 100vh;
+            overflow-x: hidden;
+            color: white;
+        }
+
+        /* 背景装饰 */
+        .bg-decoration {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        .bg-orb {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(60px);
+            opacity: 0.3;
+            animation: float 6s ease-in-out infinite;
+        }
+
+        .bg-orb:nth-child(1) {
+            width: 400px;
+            height: 400px;
+            background: linear-gradient(45deg, #3b82f6, #8b5cf6);
+            top: 20%;
+            left: 20%;
+            animation-delay: 0s;
+        }
+
+        .bg-orb:nth-child(2) {
+            width: 300px;
+            height: 300px;
+            background: linear-gradient(45deg, #8b5cf6, #ec4899);
+            bottom: 20%;
+            right: 20%;
+            animation-delay: 3s;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px) scale(1); }
+            50% { transform: translateY(-20px) scale(1.05); }
+        }
+
+        /* 玻璃拟态效果 */
+        .glass {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .glass-hover {
+            transition: all 0.3s ease;
+        }
+
+        .glass-hover:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+
+        /* 主布局 */
+        .container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            width: 320px;
+            position: fixed;
+            left: 0;
+            top: 0;
+            height: 100vh;
+            z-index: 1000;
+            transition: transform 0.3s ease;
+        }
+
+        .sidebar.collapsed {
+            transform: translateX(-100%);
+        }
+
+        .main-content {
+            flex: 1;
+            margin-left: 320px;
+            transition: margin-left 0.3s ease;
+        }
+
+        .main-content.expanded {
+            margin-left: 0;
+        }
+
+        /* 侧边栏样式 */
+        .sidebar-content {
+            padding: 2rem;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 3rem;
+        }
+
+        .logo-icon {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(45deg, #3b82f6, #8b5cf6);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+
+        .nav-menu {
+            list-style: none;
+            margin-bottom: auto;
+        }
+
+        .nav-item {
+            margin-bottom: 0.5rem;
+        }
+
+        .nav-link {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem;
+            border-radius: 12px;
+            text-decoration: none;
+            color: rgba(255, 255, 255, 0.7);
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .nav-link:hover,
+        .nav-link.active {
+            background: rgba(59, 130, 246, 0.2);
+            color: white;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+
+        .nav-badge {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 0.25rem 0.5rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            margin-left: auto;
+        }
+
+        /* 顶部导航 */
+        .header {
+            margin: 1.5rem;
+            padding: 1.5rem;
+            border-radius: 16px;
+            display: flex;
+            justify-content: between;
+            align-items: center;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .menu-toggle {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0.5rem;
+            border-radius: 8px;
+            transition: background 0.3s ease;
+        }
+
+        .menu-toggle:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .header-info h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+        }
+
+        .header-info p {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.875rem;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .notification-btn {
+            position: relative;
+            background: none;
+            border: none;
+            color: white;
+            font-size: 1.25rem;
+            cursor: pointer;
+            padding: 0.75rem;
+            border-radius: 12px;
+            transition: background 0.3s ease;
+        }
+
+        .notification-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .notification-badge {
+            position: absolute;
+            top: 0.25rem;
+            right: 0.25rem;
+            background: #ef4444;
+            color: white;
+            font-size: 0.75rem;
+            width: 1.25rem;
+            height: 1.25rem;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .user-profile {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, #3b82f6, #8b5cf6);
+        }
+
+        /* 主内容区域 */
+        .content {
+            padding: 1.5rem;
+        }
+
+        /* 统计卡片 */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            padding: 1.5rem;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .stat-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+
+        .stat-info h3 {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+        }
+
+        .stat-info p {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.875rem;
+        }
+
+        .stat-change {
+            color: #10b981;
+            font-size: 0.875rem;
+            font-weight: 500;
+            margin-left: auto;
+        }
+
+        /* 内容网格 */
+        .content-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .content-section {
+            padding: 1.5rem;
+            border-radius: 16px;
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .section-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        /* 研究者卡片 */
+        .researcher-card {
+            padding: 1.5rem;
+            border-radius: 16px;
+            margin-bottom: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .researcher-card:hover {
+            transform: translateY(-2px);
+        }
+
+        .researcher-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .researcher-avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, #3b82f6, #8b5cf6);
+        }
+
+        .researcher-rank {
+            background: linear-gradient(45deg, #3b82f6, #8b5cf6);
+            color: white;
+            padding: 0.25rem 0.5rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            margin-left: auto;
+        }
+
+        .researcher-meta {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            font-size: 0.875rem;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .researcher-research {
+            font-size: 0.875rem;
+            color: rgba(255, 255, 255, 0.8);
+            margin-bottom: 1rem;
+        }
+
+        .researcher-stats {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.875rem;
+        }
+
+        /* 内容卡片 */
+        .content-card {
+            padding: 1.5rem;
+            border-radius: 16px;
+            margin-bottom: 1rem;
+        }
+
+        .content-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .content-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, #3b82f6, #8b5cf6);
+        }
+
+        .content-author {
+            font-weight: 600;
+        }
+
+        .content-handle {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.875rem;
+        }
+
+        .content-time {
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.875rem;
+            margin-left: auto;
+        }
+
+        .content-text {
+            margin-bottom: 1rem;
+            line-height: 1.6;
+        }
+
+        .content-media {
+            margin-bottom: 1rem;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .content-media img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+        }
+
+        .content-actions {
+            display: flex;
+            gap: 2rem;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.875rem;
+        }
+
+        .content-action {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+            transition: color 0.3s ease;
+        }
+
+        .content-action:hover {
+            color: #3b82f6;
+        }
+
+        /* 搜索和过滤 */
+        .controls {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .search-box {
+            position: relative;
+            flex: 1;
+            min-width: 300px;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 1rem 1rem 1rem 3rem;
+            border: none;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            color: white;
+            font-size: 1rem;
+        }
+
+        .search-input::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .filter-btn {
+            padding: 1rem;
+            border: none;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            color: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .filter-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        /* 模态框 */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+        }
+
+        .modal.show {
+            display: flex;
+        }
+
+        .modal-content {
+            max-width: 600px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            padding: 2rem;
+            border-radius: 16px;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0.5rem;
+            border-radius: 8px;
+            transition: background 0.3s ease;
+        }
+
+        .modal-close:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+
+            .sidebar.open {
+                transform: translateX(0);
+            }
+
+            .main-content {
+                margin-left: 0;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .content-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .controls {
+                flex-direction: column;
+            }
+
+            .search-box {
+                min-width: auto;
+            }
+        }
+
+        /* 加载动画 */
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 200px;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .hidden { display: none !important; }
+        .show { display: block !important; }
+    </style>
+</head>
+<body>
+    <!-- 背景装饰 -->
+    <div class="bg-decoration">
+        <div class="bg-orb"></div>
+        <div class="bg-orb"></div>
+    </div>
+
+    <div class="container">
+        <!-- 侧边栏 -->
+        <aside class="sidebar glass" id="sidebar">
+            <div class="sidebar-content">
+                <div class="logo">
+                    <div class="logo-icon">
+                        <i class="fas fa-brain"></i>
+                    </div>
+                    <div>
+                        <h2>AI Research Hub</h2>
+                        <p>X内容学习平台</p>
+                    </div>
+                </div>
+
+                <nav>
+                    <ul class="nav-menu">
+                        <li class="nav-item">
+                            <a href="#" class="nav-link active" data-view="dashboard">
+                                <i class="fas fa-chart-line"></i>
+                                <span>仪表板</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" data-view="researchers">
+                                <i class="fas fa-users"></i>
+                                <span>研究者</span>
+                                <span class="nav-badge" id="researcher-count">100</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" data-view="content">
+                                <i class="fas fa-stream"></i>
+                                <span>X内容</span>
+                                <span class="nav-badge" id="content-count">2.3K</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" data-view="analytics">
+                                <i class="fas fa-chart-bar"></i>
+                                <span>数据分析</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" id="upload-excel">
+                                <i class="fas fa-upload"></i>
+                                <span>上传数据</span>
+                            </a>
+                        </li>
+                    </ul>
+                </nav>
+
+                <div class="glass" style="padding: 1rem; border-radius: 12px;">
+                    <div class="user-profile">
+                        <div class="user-avatar"></div>
+                        <div>
+                            <p style="font-weight: 600;">研究团队</p>
+                            <p style="font-size: 0.875rem; color: rgba(255,255,255,0.7);">管理员</p>
+                        </div>
+                        <i class="fas fa-cog" style="margin-left: auto; cursor: pointer;"></i>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 主内容 -->
+        <main class="main-content" id="mainContent">
+            <!-- 顶部导航 -->
+            <header class="header glass">
+                <div class="header-left">
+                    <button class="menu-toggle" id="menuToggle">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <div class="header-info">
+                        <h1 id="page-title">仪表板</h1>
+                        <p>实时监控和分析顶级AI研究者的X平台内容</p>
+                    </div>
+                </div>
+                <div class="header-right">
+                    <button class="notification-btn glass">
+                        <i class="fas fa-bell"></i>
+                        <span class="notification-badge">3</span>
+                    </button>
+                    <div class="user-profile">
+                        <div class="user-avatar"></div>
+                        <div class="hidden md:block">
+                            <p style="font-weight: 600;">研究团队</p>
+                            <p style="font-size: 0.875rem; color: rgba(255,255,255,0.7);">管理员</p>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- 动态内容区域 -->
+            <div class="content" id="dynamicContent">
+                <!-- 内容将通过JavaScript动态加载 -->
+            </div>
+        </main>
+    </div>
+
+    <!-- 研究者详情模态框 -->
+    <div class="modal" id="researcherModal">
+        <div class="modal-content glass">
+            <div class="modal-header">
+                <h2 id="modal-researcher-name">研究者详情</h2>
+                <button class="modal-close" id="modalClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div id="modal-researcher-details">
+                <!-- 详情内容 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 文件上传模态框 -->
+    <div class="modal" id="uploadModal">
+        <div class="modal-content glass">
+            <div class="modal-header">
+                <h2>上传Excel数据</h2>
+                <button class="modal-close" id="uploadModalClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div style="text-align: center; padding: 2rem;">
+                <div style="border: 2px dashed rgba(255,255,255,0.3); border-radius: 12px; padding: 3rem; margin-bottom: 1rem;">
+                    <i class="fas fa-cloud-upload-alt" style="font-size: 3rem; color: rgba(255,255,255,0.5); margin-bottom: 1rem;"></i>
+                    <p style="margin-bottom: 1rem;">拖拽Excel文件到此处或点击选择</p>
+                    <input type="file" id="excelFile" accept=".xlsx,.xls" style="display: none;">
+                    <button class="filter-btn" onclick="document.getElementById('excelFile').click()">
+                        选择文件
+                    </button>
+                </div>
+                <p style="font-size: 0.875rem; color: rgba(255,255,255,0.7);">
+                    支持的格式：.xlsx, .xls<br>
+                    请确保Excel包含：排名、姓名、国家、所在公司、研究方向、X账号列
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 应用状态
+        let currentView = 'dashboard';
+        let researchers = [];
+        let content = [];
+        let analytics = {};
+
+        // DOM元素
+        const sidebar = document.getElementById('sidebar');
+        const mainContent = document.getElementById('mainContent');
+        const menuToggle = document.getElementById('menuToggle');
+        const dynamicContent = document.getElementById('dynamicContent');
+        const pageTitle = document.getElementById('page-title');
+        const navLinks = document.querySelectorAll('.nav-link');
+        const researcherModal = document.getElementById('researcherModal');
+        const uploadModal = document.getElementById('uploadModal');
+
+        // 初始化应用
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeApp();
+            bindEvents();
+        });
+
+        function initializeApp() {
+            loadAnalytics();
+            loadResearchers();
+            renderCurrentView();
+        }
+
+        function bindEvents() {
+            // 菜单切换
+            menuToggle.addEventListener('click', toggleSidebar);
+
+            // 导航点击
+            navLinks.forEach(link => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const view = link.getAttribute('data-view');
+                    if (view) {
+                        switchView(view);
+                    } else if (link.id === 'upload-excel') {
+                        showUploadModal();
+                    }
+                });
+            });
+
+            // 模态框关闭
+            document.getElementById('modalClose').addEventListener('click', hideResearcherModal);
+            document.getElementById('uploadModalClose').addEventListener('click', hideUploadModal);
+
+            // 文件上传
+            document.getElementById('excelFile').addEventListener('change', handleFileUpload);
+
+            // 点击外部关闭模态框
+            researcherModal.addEventListener('click', (e) => {
+                if (e.target === researcherModal) hideResearcherModal();
+            });
+            uploadModal.addEventListener('click', (e) => {
+                if (e.target === uploadModal) hideUploadModal();
+            });
+        }
+
+        function toggleSidebar() {
+            sidebar.classList.toggle('collapsed');
+            mainContent.classList.toggle('expanded');
+        }
+
+        function switchView(view) {
+            currentView = view;
+
+            // 更新导航状态
+            navLinks.forEach(link => link.classList.remove('active'));
+            document.querySelector(`[data-view="${view}"]`).classList.add('active');
+
+            // 更新页面标题
+            const titles = {
+                dashboard: '仪表板',
+                researchers: 'AI研究者',
+                content: 'X内容',
+                analytics: '数据分析'
+            };
+            pageTitle.textContent = titles[view];
+
+            renderCurrentView();
+        }
+
+        function renderCurrentView() {
+            switch(currentView) {
+                case 'dashboard':
+                    renderDashboard();
+                    break;
+                case 'researchers':
+                    renderResearchers();
+                    break;
+                case 'content':
+                    renderContent();
+                    break;
+                case 'analytics':
+                    renderAnalytics();
+                    break;
+            }
+        }
+
+        function renderDashboard() {
+            dynamicContent.innerHTML = `
+                <div class="stats-grid">
+                    <div class="stat-card glass glass-hover">
+                        <div class="stat-icon" style="background: linear-gradient(45deg, #3b82f6, #06b6d4);">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3>${analytics.total_researchers || 100}</h3>
+                            <p>研究者总数</p>
+                        </div>
+                        <span class="stat-change">+12%</span>
+                    </div>
+                    <div class="stat-card glass glass-hover">
+                        <div class="stat-icon" style="background: linear-gradient(45deg, #8b5cf6, #ec4899);">
+                            <i class="fas fa-stream"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3>${analytics.total_content || '2,347'}</h3>
+                            <p>收集内容</p>
+                        </div>
+                        <span class="stat-change">+23%</span>
+                    </div>
+                    <div class="stat-card glass glass-hover">
+                        <div class="stat-icon" style="background: linear-gradient(45deg, #10b981, #059669);">
+                            <i class="fas fa-heart"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3>${analytics.total_engagement || '45.2K'}</h3>
+                            <p>互动数据</p>
+                        </div>
+                        <span class="stat-change">+18%</span>
+                    </div>
+                    <div class="stat-card glass glass-hover">
+                        <div class="stat-icon" style="background: linear-gradient(45deg, #f59e0b, #dc2626);">
+                            <i class="fas fa-chart-bar"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3>28</h3>
+                            <p>分析报告</p>
+                        </div>
+                        <span class="stat-change">+5%</span>
+                    </div>
+                </div>
+
+                <div class="content-grid">
+                    <div class="content-section glass">
+                        <div class="section-header">
+                            <h3 class="section-title">热门研究者</h3>
+                        </div>
+                        <div id="top-researchers">
+                            ${renderTopResearchers()}
+                        </div>
+                    </div>
+
+                    <div class="content-section glass">
+                        <div class="section-header">
+                            <h3 class="section-title">最新内容</h3>
+                        </div>
+                        <div id="latest-content">
+                            ${renderLatestContent()}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderResearchers() {
+            dynamicContent.innerHTML = `
+                <div class="controls">
+                    <div class="search-box">
+                        <i class="fas fa-search search-icon"></i>
+                        <input type="text" class="search-input" placeholder="搜索研究者..." id="researcherSearch">
+                    </div>
+                    <button class="filter-btn">
+                        <i class="fas fa-filter"></i>
+                    </button>
+                </div>
+
+                <div class="loading" id="researchers-loading">
+                    <div class="spinner"></div>
+                </div>
+
+                <div class="content-grid" id="researchers-grid" style="display: none;">
+                    ${renderResearcherCards()}
+                </div>
+            `;
+
+            // 绑定搜索事件
+            document.getElementById('researcherSearch').addEventListener('input', (e) => {
+                filterResearchers(e.target.value);
+            });
+
+            // 模拟加载
+            setTimeout(() => {
+                document.getElementById('researchers-loading').style.display = 'none';
+                document.getElementById('researchers-grid').style.display = 'grid';
+            }, 1000);
+        }
+
+        function renderContent() {
+            dynamicContent.innerHTML = `
+                <div class="controls">
+                    <div class="search-box">
+                        <i class="fas fa-search search-icon"></i>
+                        <input type="text" class="search-input" placeholder="搜索内容...">
+                    </div>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="filter-btn active" data-filter="all">全部</button>
+                        <button class="filter-btn" data-filter="text">文字</button>
+                        <button class="filter-btn" data-filter="images">图片</button>
+                        <button class="filter-btn" data-filter="videos">视频</button>
+                    </div>
+                </div>
+
+                <div class="loading" id="content-loading">
+                    <div class="spinner"></div>
+                </div>
+
+                <div class="content-grid" id="content-grid" style="display: none;">
+                    ${renderContentCards()}
+                </div>
+            `;
+
+            // 模拟加载
+            setTimeout(() => {
+                document.getElementById('content-loading').style.display = 'none';
+                document.getElementById('content-grid').style.display = 'grid';
+            }, 1000);
+        }
+
+        function renderAnalytics() {
+            dynamicContent.innerHTML = `
+                <div class="content-grid">
+                    <div class="content-section glass">
+                        <div class="section-header">
+                            <h3 class="section-title">内容类型分布</h3>
+                        </div>
+                        <div style="margin-top: 2rem;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                                <span>文字内容</span>
+                                <div style="display: flex; align-items: center; gap: 1rem;">
+                                    <div style="width: 120px; height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden;">
+                                        <div style="width: 75%; height: 100%; background: linear-gradient(90deg, #3b82f6, #8b5cf6);"></div>
+                                    </div>
+                                    <span>75%</span>
+                                </div>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                                <span>图片内容</span>
+                                <div style="display: flex; align-items: center; gap: 1rem;">
+                                    <div style="width: 120px; height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden;">
+                                        <div style="width: 50%; height: 100%; background: linear-gradient(90deg, #10b981, #059669);"></div>
+                                    </div>
+                                    <span>50%</span>
+                                </div>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span>视频内容</span>
+                                <div style="display: flex; align-items: center; gap: 1rem;">
+                                    <div style="width: 120px; height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden;">
+                                        <div style="width: 33%; height: 100%; background: linear-gradient(90deg, #f59e0b, #dc2626);"></div>
+                                    </div>
+                                    <span>33%</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="content-section glass">
+                        <div class="section-header">
+                            <h3 class="section-title">互动趋势</h3>
+                        </div>
+                        <div style="height: 200px; display: flex; align-items: end; justify-content: space-between; gap: 0.5rem; margin-top: 2rem;">
+                            ${Array.from({length: 12}, (_, i) => {
+                                const height = Math.random() * 80 + 20;
+                                return `<div style="flex: 1; background: linear-gradient(180deg, #3b82f6, #8b5cf6); height: ${height}%; border-radius: 4px 4px 0 0; transition: all 0.3s ease; cursor: pointer;" onmouseover="this.style.background='linear-gradient(180deg, #60a5fa, #a78bfa)'" onmouseout="this.style.background='linear-gradient(180deg, #3b82f6, #8b5cf6)'"></div>`;
+                            }).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderTopResearchers() {
+            const topResearchers = researchers.slice(0, 3);
+            return topResearchers.map(researcher => `
+                <div class="researcher-card glass glass-hover" onclick="showResearcherModal(${researcher.id})">
+                    <div class="researcher-header">
+                        <div class="researcher-avatar"></div>
+                        <div>
+                            <h4>${researcher.name}</h4>
+                            <p style="color: rgba(255,255,255,0.7); font-size: 0.875rem;">${researcher.company}</p>
+                        </div>
+                        <span class="researcher-rank">#${researcher.rank}</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderLatestContent() {
+            // 模拟最新内容
+            const latestContent = [
+                {
+                    author: 'Ilya Sutskever',
+                    handle: '@ilyasut',
+                    content: 'The future of AGI depends on our ability to understand and control emergent behaviors...',
+                    time: '2h'
+                },
+                {
+                    author: 'Geoffrey Hinton',
+                    handle: '@geoffreyhinton',
+                    content: 'Reflections on 40 years of neural network research...',
+                    time: '4h'
+                },
+                {
+                    author: 'Andrej Karpathy',
+                    handle: '@karpathy',
+                    content: 'New video explaining the mathematics behind attention mechanisms!',
+                    time: '6h'
+                }
+            ];
+
+            return latestContent.map(item => `
+                <div class="content-card glass glass-hover">
+                    <div class="content-header">
+                        <div class="content-avatar"></div>
+                        <div>
+                            <div class="content-author">${item.author}</div>
+                            <div class="content-handle">${item.handle}</div>
+                        </div>
+                        <div class="content-time">${item.time}</div>
+                    </div>
+                    <div class="content-text">${item.content}</div>
+                </div>
+            `).join('');
+        }
+
+        function renderResearcherCards() {
+            return researchers.map(researcher => `
+                <div class="researcher-card glass glass-hover" onclick="showResearcherModal(${researcher.id})">
+                    <div class="researcher-header">
+                        <div class="researcher-avatar"></div>
+                        <div>
+                            <h4>${researcher.name}</h4>
+                            <p style="color: rgba(255,255,255,0.7); font-size: 0.875rem;">${researcher.x_account}</p>
+                        </div>
+                        <span class="researcher-rank">#${researcher.rank}</span>
+                    </div>
+                    <div class="researcher-meta">
+                        <span><i class="fas fa-map-marker-alt"></i> ${researcher.country}</span>
+                        <span><i class="fas fa-building"></i> ${researcher.company}</span>
+                    </div>
+                    <div class="researcher-research">${researcher.research_focus}</div>
+                    <div class="researcher-stats">
+                        <span><strong>${researcher.followers_count || '127K'}</strong> 关注者</span>
+                        <span><strong>${researcher.following_count || '89'}</strong> 正在关注</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderContentCards() {
+            // 模拟内容数据
+            const mockContent = [
+                {
+                    id: 1,
+                    author: 'Ilya Sutskever',
+                    handle: '@ilyasut',
+                    content: 'The future of AGI depends on our ability to understand and control emergent behaviors in large-scale neural networks. Working on some exciting breakthroughs at SSI! 🧠🚀',
+                    time: '2h',
+                    likes: 1247,
+                    retweets: 389,
+                    replies: 156
+                },
+                {
+                    id: 2,
+                    author: 'Geoffrey Hinton',
+                    handle: '@geoffreyhinton',
+                    content: 'Reflections on 40 years of neural network research. The journey from backpropagation to transformers has been remarkable.',
+                    time: '4h',
+                    likes: 2103,
+                    retweets: 654,
+                    replies: 278,
+                    image: 'https://via.placeholder.com/500x300?text=Research+Image'
+                },
+                {
+                    id: 3,
+                    author: 'Andrej Karpathy',
+                    handle: '@karpathy',
+                    content: 'New video explaining the mathematics behind attention mechanisms! 📹✨',
+                    time: '6h',
+                    likes: 3456,
+                    retweets: 987,
+                    replies: 445,
+                    video: true
+                }
+            ];
+
+            return mockContent.map(item => `
+                <div class="content-card glass glass-hover">
+                    <div class="content-header">
+                        <div class="content-avatar"></div>
+                        <div>
+                            <div class="content-author">${item.author}</div>
+                            <div class="content-handle">${item.handle}</div>
+                        </div>
+                        <div class="content-time">${item.time}</div>
+                    </div>
+                    <div class="content-text">${item.content}</div>
+                    ${item.image ? `<div class="content-media"><img src="${item.image}" alt="Content image"></div>` : ''}
+                    ${item.video ? `<div class="content-media" style="position: relative; background: #000; display: flex; align-items: center; justify-content: center; height: 200px; border-radius: 12px;"><i class="fas fa-play" style="font-size: 3rem; color: rgba(255,255,255,0.8);"></i></div>` : ''}
+                    <div class="content-actions">
+                        <div class="content-action">
+                            <i class="fas fa-comment"></i>
+                            <span>${item.replies}</span>
+                        </div>
+                        <div class="content-action">
+                            <i class="fas fa-retweet"></i>
+                            <span>${item.retweets}</span>
+                        </div>
+                        <div class="content-action">
+                            <i class="fas fa-heart"></i>
+                            <span>${item.likes}</span>
+                        </div>
+                        <div class="content-action">
+                            <i class="fas fa-share"></i>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // API调用函数
+        async function loadResearchers() {
+            try {
+                const response = await fetch('/api/researchers');
+                researchers = await response.json();
+                document.getElementById('researcher-count').textContent = researchers.length;
+            } catch (error) {
+                console.error('加载研究者数据失败:', error);
+                // 使用模拟数据
+                researchers = [
+                    { id: 1, rank: 1, name: 'Ilya Sutskever', country: 'Canada', company: 'SSI', research_focus: 'AlexNet、Seq2seq、深度学习', x_account: '@ilyasut' },
+                    { id: 2, rank: 2, name: 'Noam Shazeer', country: 'USA', company: 'Google Deepmind', research_focus: '注意力机制即你所需要、混合专家模型、角色AI', x_account: '@noamshazeer' },
+                    { id: 3, rank: 3, name: 'Geoffrey Hinton', country: 'UK', company: 'University of Toronto', research_focus: '反向传播、玻尔兹曼机、深度学习', x_account: '@geoffreyhinton' },
+                    { id: 4, rank: 4, name: 'Alec Radford', country: 'USA', company: 'Thinking Machines', research_focus: '生成对抗网络、GPT、CLIP', x_account: '@alec_radford' },
+                    { id: 5, rank: 5, name: 'Andrej Karpathy', country: 'Slovakia', company: 'Tesla', research_focus: '计算机视觉、神经网络、自动驾驶', x_account: '@karpathy' }
+                ];
+            }
+        }
+
+        async function loadAnalytics() {
+            try {
+                const response = await fetch('/api/analytics');
+                analytics = await response.json();
+            } catch (error) {
+                console.error('加载分析数据失败:', error);
+                analytics = {
+                    total_researchers: 100,
+                    total_content: '2,347',
+                    total_engagement: '45.2K'
+                };
+            }
+        }
+
+        function filterResearchers(query) {
+            const filteredResearchers = researchers.filter(researcher =>
+                researcher.name.toLowerCase().includes(query.toLowerCase()) ||
+                researcher.company.toLowerCase().includes(query.toLowerCase()) ||
+                researcher.research_focus.toLowerCase().includes(query.toLowerCase())
+            );
+
+            const grid = document.getElementById('researchers-grid');
+            if (grid) {
+                grid.innerHTML = filteredResearchers.map(researcher => `
+                    <div class="researcher-card glass glass-hover" onclick="showResearcherModal(${researcher.id})">
+                        <div class="researcher-header">
+                            <div class="researcher-avatar"></div>
+                            <div>
+                                <h4>${researcher.name}</h4>
+                                <p style="color: rgba(255,255,255,0.7); font-size: 0.875rem;">${researcher.x_account}</p>
+                            </div>
+                            <span class="researcher-rank">#${researcher.rank}</span>
+                        </div>
+                        <div class="researcher-meta">
+                            <span><i class="fas fa-map-marker-alt"></i> ${researcher.country}</span>
+                            <span><i class="fas fa-building"></i> ${researcher.company}</span>
+                        </div>
+                        <div class="researcher-research">${researcher.research_focus}</div>
+                        <div class="researcher-stats">
+                            <span><strong>${researcher.followers_count || '127K'}</strong> 关注者</span>
+                            <span><strong>${researcher.following_count || '89'}</strong> 正在关注</span>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        // 模态框函数
+        function showResearcherModal(researcherId) {
+            const researcher = researchers.find(r => r.id === researcherId);
+            if (!researcher) return;
+
+            document.getElementById('modal-researcher-name').textContent = researcher.name;
+            document.getElementById('modal-researcher-details').innerHTML = `
+                <div class="researcher-header" style="margin-bottom: 2rem;">
+                    <div class="researcher-avatar" style="width: 80px; height: 80px;"></div>
+                    <div style="flex: 1; margin-left: 1rem;">
+                        <h2 style="margin-bottom: 0.5rem;">${researcher.name}</h2>
+                        <p style="color: #3b82f6; margin-bottom: 1rem;">${researcher.x_account}</p>
+                        <div style="display: flex; gap: 2rem; font-size: 0.875rem; color: rgba(255,255,255,0.7);">
+                            <span><i class="fas fa-map-marker-alt"></i> ${researcher.country}</span>
+                            <span><i class="fas fa-building"></i> ${researcher.company}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 2rem;">
+                    <h3 style="margin-bottom: 1rem;">研究方向与成就</h3>
+                    <p style="color: rgba(255,255,255,0.8); line-height: 1.6;">${researcher.research_focus}</p>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 2rem;">
+                    <div class="glass" style="padding: 1.5rem; border-radius: 12px; text-align: center;">
+                        <h3 style="font-size: 2rem; margin-bottom: 0.5rem;">${researcher.followers_count || '127K'}</h3>
+                        <p style="color: rgba(255,255,255,0.7);">关注者</p>
+                    </div>
+                    <div class="glass" style="padding: 1.5rem; border-radius: 12px; text-align: center;">
+                        <h3 style="font-size: 2rem; margin-bottom: 0.5rem;">${researcher.following_count || '89'}</h3>
+                        <p style="color: rgba(255,255,255,0.7);">正在关注</p>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 1rem;">
+                    <button style="flex: 1; background: linear-gradient(45deg, #3b82f6, #8b5cf6); border: none; padding: 1rem; border-radius: 12px; color: white; font-weight: 600; cursor: pointer; transition: all 0.3s ease;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+                        开始监控
+                    </button>
+                    <button class="glass glass-hover" style="padding: 1rem 1.5rem; border: none; border-radius: 12px; color: white; font-weight: 600; cursor: pointer;">
+                        查看内容
+                    </button>
+                </div>
+            `;
+
+            researcherModal.classList.add('show');
+        }
+
+        function hideResearcherModal() {
+            researcherModal.classList.remove('show');
+        }
+
+        function showUploadModal() {
+            uploadModal.classList.add('show');
+        }
+
+        function hideUploadModal() {
+            uploadModal.classList.remove('show');
+        }
+
+        async function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/api/upload_excel', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    alert(`上传成功！${result.message}`);
+                    hideUploadModal();
+                    loadResearchers(); // 重新加载研究者数据
+                } else {
+                    alert(`上传失败：${result.error}`);
+                }
+            } catch (error) {
+                console.error('文件上传错误:', error);
+                alert('上传失败，请检查网络连接');
+            }
+        }
+    </script>
+</body>
+</html>
