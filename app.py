@@ -3,7 +3,7 @@ import json
 import tweepy
 import os
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import sqlite3
 import logging
 import threading
@@ -24,14 +24,14 @@ class TwitterAPI:
         if TWITTER_BEARER_TOKEN:
             try:
                 self.client = tweepy.Client(bearer_token=TWITTER_BEARER_TOKEN)
-                logger.info("✅ Twitter API连接成功")
+                logger.info("✅ Twitter API客户端初始化成功")
                 self.test_connection()
             except Exception as e:
                 logger.error(f"❌ Twitter API初始化失败: {e}")
                 self.client = None
         else:
             self.client = None
-            logger.warning("⚠️ Twitter Bearer Token未配置")
+            logger.warning("⚠️ Twitter Bearer Token未配置，将无法获取真实数据")
     
     def test_connection(self):
         """测试API连接"""
@@ -47,75 +47,61 @@ class TwitterAPI:
         return False
     
     def get_user_tweets(self, username, max_results=10):
-        """获取用户推文"""
+        """
+        获取用户自2025年1月1日以来的推文。
+        如果获取失败或没有新推文，则返回空列表。
+        """
         if not self.client:
-            return self.get_mock_tweets(username)
+            logger.warning(f"Twitter客户端未配置，无法获取 {username} 的推文")
+            return []
         
         try:
             # 移除@符号
             username = username.replace('@', '')
             
             # 获取用户信息
-            user = self.client.get_user(username=username)
-            if not user.data:
-                logger.warning(f"用户 {username} 不存在")
-                return self.get_mock_tweets(username)
+            user_response = self.client.get_user(username=username)
+            if not user_response.data:
+                logger.warning(f"Twitter用户 {username} 不存在")
+                return []
+            
+            user_id = user_response.data.id
+            
+            # 设置起始时间为2025年1月1日
+            start_date = datetime(2025, 1, 1, tzinfo=timezone.utc)
             
             # 获取推文
-            tweets = self.client.get_users_tweets(
-                id=user.data.id,
+            tweets_response = self.client.get_users_tweets(
+                id=user_id,
                 max_results=min(max_results, 100),
                 tweet_fields=['created_at', 'public_metrics', 'context_annotations'],
-                exclude=['retweets', 'replies']
+                exclude=['retweets', 'replies'],
+                start_time=start_date
             )
             
-            if not tweets.data:
-                return self.get_mock_tweets(username)
+            if not tweets_response.data:
+                logger.info(f"✅ 未找到 {username} 自 {start_date.date()} 以来的新推文")
+                return []
             
             result = []
-            for tweet in tweets.data:
+            for tweet in tweets_response.data:
                 result.append({
                     'id': str(tweet.id),
                     'content': tweet.text,
                     'created_at': tweet.created_at.isoformat() if tweet.created_at else None,
-                    'likes': tweet.public_metrics['like_count'],
-                    'retweets': tweet.public_metrics['retweet_count'],
-                    'replies': tweet.public_metrics['reply_count'],
+                    'likes': tweet.public_metrics.get('like_count', 0),
+                    'retweets': tweet.public_metrics.get('retweet_count', 0),
+                    'replies': tweet.public_metrics.get('reply_count', 0),
                     'author': username,
                     'type': 'text'
                 })
             
-            logger.info(f"✅ 成功获取 {username} 的 {len(result)} 条推文")
+            logger.info(f"✅ 成功获取 {username} 的 {len(result)} 条新推文")
             return result
             
         except Exception as e:
-            logger.error(f"获取 {username} 推文失败: {e}")
-            return self.get_mock_tweets(username)
-    
-    def get_mock_tweets(self, username):
-        """模拟数据"""
-        return [
-            {
-                'id': f'mock_{username}_1',
-                'content': f'Latest research insights from {username}. The future of AI is incredible! 🚀',
-                'created_at': (datetime.now() - timedelta(hours=2)).isoformat(),
-                'likes': 1247,
-                'retweets': 389,
-                'replies': 156,
-                'author': username,
-                'type': 'text'
-            },
-            {
-                'id': f'mock_{username}_2', 
-                'content': f'Sharing some thoughts on the latest developments in machine learning.',
-                'created_at': (datetime.now() - timedelta(hours=6)).isoformat(),
-                'likes': 856,
-                'retweets': 234,
-                'replies': 89,
-                'author': username,
-                'type': 'text'
-            }
-        ]
+            logger.error(f"获取 {username} 推文时发生错误: {e}")
+            return [] # 发生任何错误时，返回空列表
 
 class ResearcherManager:
     def __init__(self):
@@ -180,7 +166,7 @@ class ResearcherManager:
         logger.info("✅ 数据库初始化完成")
     
     def load_sample_data(self):
-        """加载示例数据"""
+        """加载研究者示例数据 (此为应用基础数据，非动态内容)"""
         researchers_data = [
             {
                 'rank': 1, 'name': 'Ilya Sutskever', 'country': 'Canada', 'company': 'SSI',
@@ -262,11 +248,20 @@ class MonitoringService:
         cursor.execute('SELECT id, name, x_account FROM researchers WHERE is_monitoring = 1')
         researchers = cursor.fetchall()
         
+        conn.close() # Close connection before starting long-running task
+        
         for researcher_id, name, x_account in researchers:
             try:
                 tweets = twitter_api.get_user_tweets(x_account, max_results=5)
+                
+                if not tweets: # 如果没有获取到推文，则跳过
+                    continue
+
+                conn_inner = sqlite3.connect('research_platform.db')
+                cursor_inner = conn_inner.cursor()
+
                 for tweet in tweets:
-                    cursor.execute('''
+                    cursor_inner.execute('''
                         INSERT OR IGNORE INTO x_content 
                         (researcher_id, tweet_id, content, likes_count, retweets_count, replies_count, created_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -277,19 +272,20 @@ class MonitoringService:
                     ))
                 
                 # 更新最后检查时间
-                cursor.execute('''
+                cursor_inner.execute('''
                     UPDATE monitoring_tasks SET last_check = CURRENT_TIMESTAMP 
                     WHERE researcher_id = ?
                 ''', (researcher_id,))
+                
+                conn_inner.commit()
+                conn_inner.close()
                 
                 logger.info(f"✅ 已更新 {name} 的内容")
                 
             except Exception as e:
                 logger.error(f"检查 {name} 时出错: {e}")
-        
-        conn.commit()
-        conn.close()
 
+# 初始化监控服务
 monitoring_service = MonitoringService()
 
 # API路由
@@ -315,6 +311,7 @@ def get_researchers():
         cursor.execute('SELECT * FROM researchers ORDER BY rank')
     
     researchers = []
+    # Column names: id, rank, name, country, company, research_focus, x_account, followers_count, following_count, avatar_url, is_monitoring
     for row in cursor.fetchall():
         researchers.append({
             'id': row[0], 'rank': row[1], 'name': row[2], 'country': row[3],
@@ -333,34 +330,39 @@ def get_researcher_detail(researcher_id):
     cursor = conn.cursor()
     
     cursor.execute('SELECT * FROM researchers WHERE id = ?', (researcher_id,))
-    researcher = cursor.fetchone()
+    researcher_row = cursor.fetchone()
     
-    if not researcher:
+    if not researcher_row:
+        conn.close()
         return jsonify({'error': 'Researcher not found'}), 404
+    
+    researcher = {
+        'id': researcher_row[0], 'rank': researcher_row[1], 'name': researcher_row[2],
+        'country': researcher_row[3], 'company': researcher_row[4], 
+        'research_focus': researcher_row[5], 'x_account': researcher_row[6],
+        'followers_count': researcher_row[7], 'following_count': researcher_row[8],
+        'is_monitoring': bool(researcher_row[10])
+    }
     
     # 获取最新内容
     cursor.execute('''
         SELECT * FROM x_content WHERE researcher_id = ? 
         ORDER BY created_at DESC LIMIT 10
     ''', (researcher_id,))
-    content = cursor.fetchall()
+    content_rows = cursor.fetchall()
     
     conn.close()
     
+    recent_content = [
+        {
+            'id': c[0], 'content': c[3], 'likes': c[5], 
+            'retweets': c[6], 'replies': c[7], 'created_at': c[8]
+        } for c in content_rows
+    ]
+    
     return jsonify({
-        'researcher': {
-            'id': researcher[0], 'rank': researcher[1], 'name': researcher[2],
-            'country': researcher[3], 'company': researcher[4], 
-            'research_focus': researcher[5], 'x_account': researcher[6],
-            'followers_count': researcher[7], 'following_count': researcher[8],
-            'is_monitoring': bool(researcher[10])
-        },
-        'recent_content': [
-            {
-                'id': c[0], 'content': c[3], 'likes': c[5], 
-                'retweets': c[6], 'replies': c[7], 'created_at': c[8]
-            } for c in content
-        ]
+        'researcher': researcher,
+        'recent_content': recent_content
     })
 
 @app.route('/api/content')
@@ -369,13 +371,13 @@ def get_content():
     conn = sqlite3.connect('research_platform.db')
     cursor = conn.cursor()
     
-    limit = request.args.get('limit', 20)
-    content_type = request.args.get('type', 'all')
+    limit = request.args.get('limit', 20, type=int)
     
     query = '''
-        SELECT c.*, r.name, r.x_account 
+        SELECT c.id, c.content, c.content_type, c.likes_count, c.retweets_count, 
+               c.replies_count, c.created_at, c.collected_at, r.name, r.x_account 
         FROM x_content c
-        LEFT JOIN researchers r ON c.researcher_id = r.id
+        JOIN researchers r ON c.researcher_id = r.id
         ORDER BY c.created_at DESC
         LIMIT ?
     '''
@@ -386,22 +388,22 @@ def get_content():
     for row in cursor.fetchall():
         content_list.append({
             'id': row[0],
-            'content': row[3],
-            'content_type': row[4],
-            'likes_count': row[5],
-            'retweets_count': row[6],
-            'replies_count': row[7],
-            'created_at': row[8],
-            'collected_at': row[9],
-            'author_name': row[10] or 'Unknown',
-            'author_handle': row[11] or '@unknown'
+            'content': row[1],
+            'content_type': row[2],
+            'likes_count': row[3],
+            'retweets_count': row[4],
+            'replies_count': row[5],
+            'created_at': row[6],
+            'collected_at': row[7],
+            'author_name': row[8] or 'Unknown',
+            'author_handle': row[9] or '@unknown'
         })
     
     conn.close()
     return jsonify(content_list)
 
 @app.route('/api/start_monitoring', methods=['POST'])
-def start_monitoring():
+def start_monitoring_route():
     """开始监控指定研究者"""
     data = request.get_json()
     researcher_ids = data.get('researcher_ids', [])
@@ -416,16 +418,10 @@ def start_monitoring():
     for researcher_id in researcher_ids:
         try:
             # 更新研究者监控状态
-            cursor.execute('''
-                UPDATE researchers SET is_monitoring = 1, updated_at = CURRENT_TIMESTAMP 
-                WHERE id = ?
-            ''', (researcher_id,))
+            cursor.execute('UPDATE researchers SET is_monitoring = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', (researcher_id,))
             
             # 创建监控任务
-            cursor.execute('''
-                INSERT OR REPLACE INTO monitoring_tasks (researcher_id, status, last_check)
-                VALUES (?, 'active', CURRENT_TIMESTAMP)
-            ''', (researcher_id,))
+            cursor.execute('INSERT OR REPLACE INTO monitoring_tasks (researcher_id, status, last_check) VALUES (?, \'active\', CURRENT_TIMESTAMP)', (researcher_id,))
             
             success_count += 1
             
@@ -435,7 +431,7 @@ def start_monitoring():
     conn.commit()
     conn.close()
     
-    # 启动监控服务
+    # 确保监控服务正在运行
     monitoring_service.start_monitoring()
     
     return jsonify({
@@ -444,7 +440,7 @@ def start_monitoring():
     })
 
 @app.route('/api/stop_monitoring', methods=['POST'])
-def stop_monitoring():
+def stop_monitoring_route():
     """停止监控指定研究者"""
     data = request.get_json()
     researcher_ids = data.get('researcher_ids', [])
@@ -453,15 +449,8 @@ def stop_monitoring():
     cursor = conn.cursor()
     
     for researcher_id in researcher_ids:
-        cursor.execute('''
-            UPDATE researchers SET is_monitoring = 0, updated_at = CURRENT_TIMESTAMP 
-            WHERE id = ?
-        ''', (researcher_id,))
-        
-        cursor.execute('''
-            UPDATE monitoring_tasks SET status = 'inactive' 
-            WHERE researcher_id = ?
-        ''', (researcher_id,))
+        cursor.execute('UPDATE researchers SET is_monitoring = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?', (researcher_id,))
+        cursor.execute('UPDATE monitoring_tasks SET status = \'inactive\' WHERE researcher_id = ?', (researcher_id,))
     
     conn.commit()
     conn.close()
@@ -474,11 +463,11 @@ def fetch_researcher_content(researcher_id):
     conn = sqlite3.connect('research_platform.db')
     cursor = conn.cursor()
     
-    # 获取研究者信息
     cursor.execute('SELECT name, x_account FROM researchers WHERE id = ?', (researcher_id,))
     researcher = cursor.fetchone()
     
     if not researcher:
+        conn.close()
         return jsonify({'error': 'Researcher not found'}), 404
     
     name, x_account = researcher
@@ -488,30 +477,34 @@ def fetch_researcher_content(researcher_id):
         tweets = twitter_api.get_user_tweets(x_account, max_results=10)
         
         new_content_count = 0
-        for tweet in tweets:
-            cursor.execute('''
-                INSERT OR IGNORE INTO x_content 
-                (researcher_id, tweet_id, content, likes_count, retweets_count, replies_count, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                researcher_id, tweet['id'], tweet['content'],
-                tweet['likes'], tweet['retweets'], tweet['replies'],
-                tweet['created_at']
-            ))
+        if tweets: # 仅在获取到推文时才操作数据库
+            for tweet in tweets:
+                cursor.execute('''
+                    INSERT OR IGNORE INTO x_content 
+                    (researcher_id, tweet_id, content, likes_count, retweets_count, replies_count, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    researcher_id, tweet['id'], tweet['content'],
+                    tweet['likes'], tweet['retweets'], tweet['replies'],
+                    tweet['created_at']
+                ))
+                
+                if cursor.rowcount > 0:
+                    new_content_count += 1
             
-            if cursor.rowcount > 0:
-                new_content_count += 1
-        
-        conn.commit()
+            conn.commit()
+
         conn.close()
         
+        message = f'成功获取 {name} 的内容。' if tweets else f'未找到 {name} 的新内容。'
         return jsonify({
-            'message': f'成功获取 {name} 的内容',
+            'message': message,
             'new_content_count': new_content_count,
             'total_fetched': len(tweets)
         })
         
     except Exception as e:
+        conn.close()
         logger.error(f"获取 {name} 内容失败: {e}")
         return jsonify({'error': str(e)}), 500
 
@@ -536,11 +529,11 @@ def get_analytics():
     
     # 国家分布
     cursor.execute('SELECT country, COUNT(*) FROM researchers GROUP BY country')
-    country_distribution = dict(cursor.fetchall())
+    country_distribution = {k: v for k, v in cursor.fetchall() if k}
     
     # 公司分布
     cursor.execute('SELECT company, COUNT(*) FROM researchers GROUP BY company')
-    company_distribution = dict(cursor.fetchall())
+    company_distribution = {k: v for k, v in cursor.fetchall() if k}
     
     # 最近7天的内容趋势
     cursor.execute('''
@@ -577,33 +570,25 @@ def upload_excel():
         return jsonify({'error': 'No file selected'}), 400
     
     try:
-        # 简单处理Excel文件（不使用pandas）
         import openpyxl
         workbook = openpyxl.load_workbook(file)
         worksheet = workbook.active
         
-        # 获取标题行
-        headers = [cell.value for cell in worksheet[1]]
-        logger.info(f"Excel headers: {headers}")
-        
-        # 处理数据行
         conn = sqlite3.connect('research_platform.db')
         cursor = conn.cursor()
         
         added_count = 0
         for row in worksheet.iter_rows(min_row=2, values_only=True):
-            if len(row) >= 6 and row[1]:  # 至少有6列且名称不为空
+            if len(row) >= 6 and row[1]:
                 try:
                     cursor.execute('''
                         INSERT OR REPLACE INTO researchers 
                         (rank, name, country, company, research_focus, x_account)
                         VALUES (?, ?, ?, ?, ?, ?)
-                    ''', (
-                        row[0], row[1], row[2], row[3], row[4], row[5]
-                    ))
+                    ''', (row[0], row[1], row[2], row[3], row[4], row[5]))
                     added_count += 1
                 except Exception as e:
-                    logger.error(f"插入数据行失败: {e}")
+                    logger.error(f"插入Excel数据行失败: {e}")
         
         conn.commit()
         conn.close()
@@ -630,7 +615,7 @@ def health_check():
 
 if __name__ == '__main__':
     logger.info("🚀 AI研究者X内容学习平台启动中...")
-    logger.info(f"Twitter API: {'✅ 已配置' if TWITTER_BEARER_TOKEN else '⚠️ 未配置，使用模拟数据'}")
+    logger.info(f"Twitter API: {'✅ 已配置' if TWITTER_BEARER_TOKEN else '⚠️ 未配置，将无法获取真实数据'}")
     
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
