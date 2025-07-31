@@ -46,51 +46,48 @@ class TwitterAPI:
             logger.error(f"API连接测试失败: {e}")
         return False
     
-    def get_user_tweets(self, username, max_results=10):
-        """获取用户推文"""
-        if not self.client:
+def get_user_tweets(self, username, max_results=10):
+    """获取用户推文"""
+    if not self.client:
+        logger.warning("Twitter客户端未初始化，使用模拟数据")
+        return self.get_mock_tweets(username)
+    
+    try:
+        # 移除@符号
+        username = username.replace('@', '')
+        logger.info(f"正在获取 {username} 的推文...")
+        
+        # 直接通过用户名获取推文
+        tweets = self.client.get_users_tweets(
+            username=username,
+            max_results=min(max_results, 10),
+            tweet_fields=['created_at', 'public_metrics'],
+            exclude=['retweets', 'replies']
+        )
+        
+        if not tweets or not tweets.data:
+            logger.warning(f"用户 {username} 没有可访问的推文")
             return self.get_mock_tweets(username)
         
-        try:
-            # 移除@符号
-            username = username.replace('@', '')
-            
-            # 获取用户信息
-            user = self.client.get_user(username=username)
-            if not user.data:
-                logger.warning(f"用户 {username} 不存在")
-                return self.get_mock_tweets(username)
-            
-            # 获取推文
-            tweets = self.client.get_users_tweets(
-                id=user.data.id,
-                max_results=min(max_results, 100),
-                tweet_fields=['created_at', 'public_metrics', 'context_annotations'],
-                exclude=['retweets', 'replies']
-            )
-            
-            if not tweets.data:
-                return self.get_mock_tweets(username)
-            
-            result = []
-            for tweet in tweets.data:
-                result.append({
-                    'id': str(tweet.id),
-                    'content': tweet.text,
-                    'created_at': tweet.created_at.isoformat() if tweet.created_at else None,
-                    'likes': tweet.public_metrics['like_count'],
-                    'retweets': tweet.public_metrics['retweet_count'],
-                    'replies': tweet.public_metrics['reply_count'],
-                    'author': username,
-                    'type': 'text'
-                })
-            
-            logger.info(f"✅ 成功获取 {username} 的 {len(result)} 条推文")
-            return result
-            
-        except Exception as e:
-            logger.error(f"获取 {username} 推文失败: {e}")
-            return self.get_mock_tweets(username)
+        result = []
+        for tweet in tweets.data:
+            result.append({
+                'id': str(tweet.id),
+                'content': tweet.text,
+                'created_at': tweet.created_at.isoformat() if tweet.created_at else None,
+                'likes': tweet.public_metrics.get('like_count', 0),
+                'retweets': tweet.public_metrics.get('retweet_count', 0),
+                'replies': tweet.public_metrics.get('reply_count', 0),
+                'author': username,
+                'type': 'text'
+            })
+        
+        logger.info(f"✅ 成功获取 {username} 的 {len(result)} 条真实推文")
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ 获取 {username} 推文失败: {e}")
+        return self.get_mock_tweets(username)
     
     def get_mock_tweets(self, username):
         """模拟数据"""
