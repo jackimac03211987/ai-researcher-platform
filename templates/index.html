@@ -1189,15 +1189,8 @@
                 filterByStatus(true);
             });
 
-            // 监控按钮
-            document.getElementById('startMonitoringBtn').addEventListener('click', () => {
-                const selected = getSelectedResearchers();
-                if (selected.length > 0) {
-                    startMonitoring(selected);
-                } else {
-                    alert('请先选择要监控的研究者');
-                }
-            });
+            // 监控按钮 - 修正绑定
+            bindMonitoringButton();
 
             // 模拟加载
             setTimeout(() => {
@@ -1530,20 +1523,7 @@
                     return;
                 }
 
-                updateStatus('正在启动监控...', 'warning');
-                
-                const result = await apiCall('/api/start_monitoring', {
-                    method: 'POST',
-                    body: JSON.stringify({ researcher_ids: allIds })
-                });
-
-                // 更新本地状态
-                researchers.forEach(r => r.is_monitoring = true);
-                
-                updateStatus(`成功启动监控 ${result.monitoring_count} 位研究者`, 'success');
-                
-                // 刷新分析数据
-                await loadAnalytics();
+                await startMonitoring(allIds);
                 
             } catch (error) {
                 console.error('启动监控失败:', error);
@@ -1608,9 +1588,84 @@
         }
 
         function getSelectedResearchers() {
-            // 获取选中的研究者ID列表
-            const checkboxes = document.querySelectorAll('.researcher-card input[type="checkbox"]:checked');
+            const checkboxes = document.querySelectorAll('.researcher-checkbox:checked');
             return Array.from(checkboxes).map(cb => parseInt(cb.dataset.id));
+        }
+
+        function updateSelectedCount() {
+            const selected = document.querySelectorAll('.researcher-checkbox:checked').length;
+            const countElement = document.getElementById('selectedCount');
+            if (countElement) {
+                countElement.textContent = selected;
+            }
+        }
+
+        function filterByStatus(monitoringOnly) {
+            const cards = document.querySelectorAll('.researcher-card');
+            cards.forEach(card => {
+                const isMonitoring = card.querySelector('.action-btn.monitoring');
+                if (monitoringOnly && !isMonitoring) {
+                    card.style.display = 'none';
+                } else {
+                    card.style.display = 'block';
+                }
+            });
+        }
+
+        async function startMonitoring(researcherIds) {
+            try {
+                updateStatus('正在启动监控...', 'warning');
+                
+                const result = await apiCall('/api/start_monitoring', {
+                    method: 'POST',
+                    body: JSON.stringify({ researcher_ids: researcherIds })
+                });
+
+                // 更新本地状态
+                researcherIds.forEach(id => {
+                    const researcher = researchers.find(r => r.id === id);
+                    if (researcher) {
+                        researcher.is_monitoring = true;
+                    }
+                });
+                
+                updateStatus(result.message || `成功启动监控 ${researcherIds.length} 位研究者`, 'success');
+                
+                // 重新渲染研究者列表
+                if (currentView === 'researchers') {
+                    document.getElementById('researchers-grid').innerHTML = renderResearcherCards();
+                    updateSelectedCount();
+                }
+                
+                // 刷新分析数据
+                await loadAnalytics();
+                
+            } catch (error) {
+                console.error('启动监控失败:', error);
+                updateStatus('启动监控失败: ' + error.message, 'error');
+            }
+        }
+
+        // 修正监控按钮绑定
+        function bindMonitoringButton() {
+            const btn = document.getElementById('startMonitoringBtn');
+            if (btn) {
+                btn.addEventListener('click', async () => {
+                    console.log('监控按钮被点击');
+                    const selected = getSelectedResearchers();
+                    console.log('选中的研究者ID:', selected);
+                    
+                    if (selected.length > 0) {
+                        await startMonitoring(selected);
+                        // 清除选择
+                        document.querySelectorAll('.researcher-checkbox').forEach(cb => cb.checked = false);
+                        document.getElementById('selectAll').checked = false;
+                        updateSelectedCount();
+                    } else {
+                        alert('请先选择要监控的研究者');
+                    }
+                });
+            }
         }
 
         function showResearcherModal(researcherId) {
