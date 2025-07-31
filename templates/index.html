@@ -1148,9 +1148,15 @@
                             <i class="fas fa-eye"></i> 仅监控中
                         </button>
                     </div>
-                    <button class="btn btn-primary" id="startMonitoringBtn">
-                        <i class="fas fa-play"></i> 监控选中 (<span id="selectedCount">0</span>)
-                    </button>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="btn btn-primary" id="startMonitoringBtn">
+                            <i class="fas fa-play"></i> 监控选中 (<span id="selectedCount">0</span>)
+                        </button>
+                        <button class="btn" id="deleteSelectedBtn" 
+                                style="background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444;">
+                            <i class="fas fa-trash"></i> 删除选中
+                        </button>
+                    </div>
                 </div>
 
                 <div class="loading" id="researchers-loading">
@@ -1191,6 +1197,9 @@
 
             // 监控按钮 - 修正绑定
             bindMonitoringButton();
+
+            // 删除按钮
+            document.getElementById('deleteSelectedBtn').addEventListener('click', deleteBatchResearchers);
 
             // 模拟加载
             setTimeout(() => {
@@ -1384,6 +1393,10 @@
                         </button>
                         <button class="action-btn" onclick="showResearcherModal(${researcher.id})" title="查看详情">
                             <i class="fas fa-eye"></i>
+                        </button>
+                        <button class="action-btn" onclick="confirmDeleteResearcher(${researcher.id})" 
+                                title="删除研究者" style="color: #ef4444;">
+                            <i class="fas fa-trash"></i>
                         </button>
                     </div>
                     
@@ -1592,6 +1605,96 @@
             return Array.from(checkboxes).map(cb => parseInt(cb.dataset.id));
         }
 
+        async function confirmDeleteResearcher(researcherId) {
+            const researcher = researchers.find(r => r.id === researcherId);
+            if (!researcher) return;
+
+            const confirmed = confirm(`确定要删除研究者 "${researcher.name}" 吗？\n\n⚠️ 这将同时删除：\n• 该研究者的所有收集内容\n• 相关的监控任务\n• 此操作不可撤销`);
+            
+            if (confirmed) {
+                await deleteResearcher(researcherId);
+            }
+        }
+
+        async function deleteResearcher(researcherId) {
+            try {
+                updateStatus('正在删除研究者...', 'warning');
+                
+                const result = await apiCall(`/api/researcher/${researcherId}`, {
+                    method: 'DELETE'
+                });
+
+                // 从本地数组中移除
+                const index = researchers.findIndex(r => r.id === researcherId);
+                if (index > -1) {
+                    researchers.splice(index, 1);
+                }
+                
+                updateStatus(result.message, 'success');
+                
+                // 重新渲染研究者列表
+                if (currentView === 'researchers') {
+                    document.getElementById('researchers-grid').innerHTML = renderResearcherCards();
+                    updateSelectedCount();
+                }
+                
+                // 刷新分析数据
+                await loadAnalytics();
+                
+            } catch (error) {
+                console.error('删除研究者失败:', error);
+                updateStatus('删除失败: ' + error.message, 'error');
+            }
+        }
+
+        async function deleteBatchResearchers() {
+            const selectedIds = getSelectedResearchers();
+            if (selectedIds.length === 0) {
+                alert('请先选择要删除的研究者');
+                return;
+            }
+
+            const confirmed = confirm(`确定要删除选中的 ${selectedIds.length} 位研究者吗？\n\n⚠️ 这将同时删除：\n• 所有相关的收集内容\n• 相关的监控任务\n• 此操作不可撤销`);
+            
+            if (!confirmed) return;
+
+            updateStatus(`正在删除 ${selectedIds.length} 位研究者...`, 'warning');
+            
+            let successCount = 0;
+            let errorCount = 0;
+
+            for (const id of selectedIds) {
+                try {
+                    await apiCall(`/api/researcher/${id}`, { method: 'DELETE' });
+                    
+                    // 从本地数组中移除
+                    const index = researchers.findIndex(r => r.id === id);
+                    if (index > -1) {
+                        researchers.splice(index, 1);
+                    }
+                    
+                    successCount++;
+                } catch (error) {
+                    console.error(`删除研究者 ${id} 失败:`, error);
+                    errorCount++;
+                }
+            }
+
+            updateStatus(`删除完成: 成功 ${successCount} 个，失败 ${errorCount} 个`, successCount > 0 ? 'success' : 'error');
+            
+            // 重新渲染
+            if (currentView === 'researchers') {
+                document.getElementById('researchers-grid').innerHTML = renderResearcherCards();
+                updateSelectedCount();
+            }
+            
+            // 清除选择
+            document.querySelectorAll('.researcher-checkbox').forEach(cb => cb.checked = false);
+            document.getElementById('selectAll').checked = false;
+            
+            await loadAnalytics();
+        }
+
         function updateSelectedCount() {
             const selected = document.querySelectorAll('.researcher-checkbox:checked').length;
             const countElement = document.getElementById('selectedCount');
@@ -1756,7 +1859,14 @@
                 const result = await response.json();
                 
                 if (response.ok) {
-                    updateStatus(`上传成功！${result.message}`, 'success');
+                    let message = result.message;
+                    if (result.details) {
+                        const details = result.details;
+                        message += `\n\n详细信息：\n• 新增：${details.added} 位\n• 重复跳过：${details.duplicates} 位\n• 错误：${details.errors} 位\n• 总行数：${details.total_rows} 行`;
+                    }
+                    
+                    alert(message);
+                    updateStatus(`上传成功！新增 ${result.details?.added || 0} 位研究者`, 'success');
                     hideUploadModal();
                     await loadResearchers(); // 重新加载研究者数据
                     renderCurrentView();
