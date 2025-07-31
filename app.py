@@ -1,5 +1,4 @@
 from flask import Flask, render_template, jsonify, request
-import pandas as pd
 import json
 import tweepy
 import os
@@ -170,18 +169,7 @@ def get_analytics():
 
 @app.route('/api/upload_excel', methods=['POST'])
 def upload_excel():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file uploaded'}), 400
-    
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No file selected'}), 400
-    
-    try:
-        df = pd.read_excel(file)
-        return jsonify({'message': f'成功处理 {len(df)} 行数据'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    return jsonify({'message': 'Excel功能开发中，敬请期待'})
 
 if __name__ == '__main__':
     print("🚀 AI研究者X内容学习平台启动中...")
