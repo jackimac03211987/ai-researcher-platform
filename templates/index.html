@@ -1136,11 +1136,20 @@
                         <i class="fas fa-search search-icon"></i>
                         <input type="text" class="search-input" placeholder="搜索研究者..." id="researcherSearch">
                     </div>
-                    <button class="filter-btn" id="filterBtn">
-                        <i class="fas fa-filter"></i> 筛选
-                    </button>
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <label style="display: flex; align-items: center; gap: 0.5rem; color: white; cursor: pointer;">
+                            <input type="checkbox" id="selectAll" style="cursor: pointer;">
+                            <span>全选</span>
+                        </label>
+                        <button class="filter-btn active" id="filterAll">
+                            <i class="fas fa-users"></i> 全部
+                        </button>
+                        <button class="filter-btn" id="filterMonitoring">
+                            <i class="fas fa-eye"></i> 仅监控中
+                        </button>
+                    </div>
                     <button class="btn btn-primary" id="startMonitoringBtn">
-                        <i class="fas fa-play"></i> 开始监控选中
+                        <i class="fas fa-play"></i> 监控选中 (<span id="selectedCount">0</span>)
                     </button>
                 </div>
 
@@ -1158,7 +1167,29 @@
                 filterResearchers(e.target.value);
             });
 
-            // 绑定监控按钮
+            // 全选功能
+            document.getElementById('selectAll').addEventListener('change', (e) => {
+                const checkboxes = document.querySelectorAll('.researcher-checkbox');
+                checkboxes.forEach(cb => {
+                    cb.checked = e.target.checked;
+                });
+                updateSelectedCount();
+            });
+
+            // 筛选按钮
+            document.getElementById('filterAll').addEventListener('click', () => {
+                document.getElementById('filterAll').classList.add('active');
+                document.getElementById('filterMonitoring').classList.remove('active');
+                filterByStatus(false);
+            });
+
+            document.getElementById('filterMonitoring').addEventListener('click', () => {
+                document.getElementById('filterMonitoring').classList.add('active');
+                document.getElementById('filterAll').classList.remove('active');
+                filterByStatus(true);
+            });
+
+            // 监控按钮
             document.getElementById('startMonitoringBtn').addEventListener('click', () => {
                 const selected = getSelectedResearchers();
                 if (selected.length > 0) {
@@ -1172,6 +1203,7 @@
             setTimeout(() => {
                 document.getElementById('researchers-loading').style.display = 'none';
                 document.getElementById('researchers-grid').style.display = 'grid';
+                updateSelectedCount();
             }, 1000);
         }
 
@@ -1344,6 +1376,10 @@
 
             return researchers.map(researcher => `
                 <div class="researcher-card glass glass-hover" data-id="${researcher.id}">
+                    <input type="checkbox" class="researcher-checkbox" data-id="${researcher.id}" 
+                           style="position: absolute; top: 1rem; left: 1rem; cursor: pointer;" 
+                           onchange="updateSelectedCount()">
+                    
                     <div class="researcher-actions">
                         <button class="action-btn ${researcher.is_monitoring ? 'monitoring' : ''}" 
                                 onclick="toggleMonitoring(${researcher.id})" 
@@ -1358,7 +1394,7 @@
                         </button>
                     </div>
                     
-                    <div class="researcher-header">
+                    <div class="researcher-header" style="margin-left: 2rem;">
                         <div class="researcher-avatar">${getInitials(researcher.name)}</div>
                         <div>
                             <h4>${researcher.name}</h4>
@@ -1366,12 +1402,12 @@
                         </div>
                         <span class="researcher-rank">#${researcher.rank}</span>
                     </div>
-                    <div class="researcher-meta">
+                    <div class="researcher-meta" style="margin-left: 2rem;">
                         <span><i class="fas fa-map-marker-alt"></i> ${researcher.country}</span>
                         <span><i class="fas fa-building"></i> ${researcher.company}</span>
                     </div>
-                    <div class="researcher-research">${researcher.research_focus}</div>
-                    <div class="researcher-stats">
+                    <div class="researcher-research" style="margin-left: 2rem;">${researcher.research_focus}</div>
+                    <div class="researcher-stats" style="margin-left: 2rem;">
                         <span><strong>${researcher.followers_count}</strong> 关注者</span>
                         <span><strong>${researcher.following_count}</strong> 正在关注</span>
                         ${researcher.is_monitoring ? '<span style="color: #22c55e;"><i class="fas fa-circle"></i> 监控中</span>' : ''}
