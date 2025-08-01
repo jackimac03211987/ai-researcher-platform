@@ -557,26 +557,10 @@ except Exception as e:
 def index():
     """主页路由 - 返回HTML模板"""
     try:
-        # 这里应该返回index.html模板
-        # 由于我们将HTML内容放在了artifact中，实际部署时需要将HTML内容保存为templates/index.html
-        return """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>AI研究者X内容学习平台</title>
-            <meta charset="UTF-8">
-        </head>
-        <body>
-            <h1>AI研究者X内容学习平台</h1>
-            <p>请将完整的HTML内容保存为 templates/index.html 文件</p>
-            <p>系统状态: 正常运行</p>
-            <p>访问 /api/analytics 查看系统分析数据</p>
-        </body>
-        </html>
-        """
+        return render_template('index.html')
     except Exception as e:
         logger.error(f"主页加载失败: {e}")
-        return f"系统初始化失败: {str(e)}", 500
+        return f"模板加载失败: {str(e)}<br>请确保 templates/index.html 文件存在", 500
 
 @app.route('/api/researchers')
 def get_researchers():
