@@ -778,6 +778,12 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a href="#" class="nav-link" data-view="system">
+                                <i class="fas fa-database"></i>
+                                <span>系统状态</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a href="#" class="nav-link" id="upload-excel">
                                 <i class="fas fa-upload"></i>
                                 <span>上传数据</span>
@@ -972,7 +978,8 @@
                 researchers: 'AI研究者',
                 content: 'X内容',
                 analytics: '数据分析',
-                'monitoring-settings': '监控设置'
+                'monitoring-settings': '监控设置',
+                'system': '系统状态'
             };
             pageTitle.textContent = titles[view];
             
@@ -995,6 +1002,9 @@
                     break;
                 case 'monitoring-settings':
                     renderMonitoringSettings();
+                    break;
+                case 'system':
+                    renderSystemStatus();
                     break;
             }
         }
@@ -1600,7 +1610,199 @@
                 `;
                 
                 // 更新监控统计
-                updateMonitoringStats();
+            async function updateMonitoringStats() {
+            try {
+                const analytics = await apiCall('/api/analytics');
+                
+                document.getElementById('active-monitoring').textContent = analytics.monitoring_researchers || '0';
+                
+                // 计算下次检查时间（这里是估算，实际时间可能有差异）
+                const nextCheck = new Date(Date.now() + (analytics.monitoring_interval || 1800) * 1000);
+                document.getElementById('next-check').textContent = nextCheck.toLocaleTimeString();
+                
+            } catch (error) {
+                console.error('更新监控统计失败:', error);
+            }
+        }
+
+        function renderSystemStatus() {
+            dynamicContent.innerHTML = `
+                <div class="loading" id="system-loading">
+                    <div class="spinner"></div>
+                </div>
+                <div id="system-content" style="display: none;">
+                    <!-- 内容将通过loadSystemStatus动态加载 -->
+                </div>
+            `;
+            
+            loadSystemStatus();
+        }
+
+        async function loadSystemStatus() {
+            try {
+                const [dbStatus, systemStatus] = await Promise.all([
+                    apiCall('/api/database_status'),
+                    apiCall('/api/system_status')
+                ]);
+                
+                document.getElementById('system-loading').style.display = 'none';
+                document.getElementById('system-content').style.display = 'block';
+                document.getElementById('system-content').innerHTML = `
+                    <div class="content-grid">
+                        <div class="content-section glass">
+                            <div class="section-header">
+                                <h3 class="section-title">数据库状态</h3>
+                                <span style="color: ${dbStatus.status === 'healthy' ? '#10b981' : '#f59e0b'};">
+                                    ${dbStatus.status === 'healthy' ? '✅ 正常' : '⚠️ 检查'}
+                                </span>
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 2rem;">
+                                <div style="text-align: center;">
+                                    <h3 style="font-size: 2rem; color: #3b82f6; margin-bottom: 0.5rem;">${dbStatus.tables?.researchers || 0}</h3>
+                                    <p style="color: rgba(255,255,255,0.7);">研究者记录</p>
+                                </div>
+                                <div style="text-align: center;">
+                                    <h3 style="font-size: 2rem; color: #10b981; margin-bottom: 0.5rem;">${dbStatus.tables?.x_content || 0}</h3>
+                                    <p style="color: rgba(255,255,255,0.7);">内容记录</p>
+                                </div>
+                            </div>
+                            <div style="margin-bottom: 1rem;">
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                                    <span>数据库文件</span>
+                                    <span>${dbStatus.database_file}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                                    <span>文件大小</span>
+                                    <span>${dbStatus.file_size_mb} MB</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                                    <span>初始化状态</span>
+                                    <span>${dbStatus.initialized ? '✅ 已初始化' : '❌ 未初始化'}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between;">
+                                    <span>文件存在</span>
+                                    <span>${dbStatus.file_exists ? '✅ 存在' : '❌ 不存在'}</span>
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 1rem;">
+                                <button class="btn btn-secondary" onclick="refreshSystemStatus()">
+                                    <i class="fas fa-sync"></i> 刷新状态
+                                </button>
+                                <button class="btn btn-secondary" onclick="resetSampleData()">
+                                    <i class="fas fa-undo"></i> 重置示例数据
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="content-section glass">
+                            <div class="section-header">
+                                <h3 class="section-title">系统容量</h3>
+                            </div>
+                            <div style="margin-bottom: 2rem;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                                    <span>研究者容量</span>
+                                    <div style="display: flex; align-items: center; gap: 1rem;">
+                                        <div style="width: 200px; height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden;">
+                                            <div style="width: ${(systemStatus.system_capacity?.current_researchers / 5000) * 100}%; height: 100%; background: linear-gradient(90deg, #3b82f6, #8b5cf6);"></div>
+                                        </div>
+                                        <span>${systemStatus.system_capacity?.current_researchers}/5000</span>
+                                    </div>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                                    <span>当前研究者</span>
+                                    <span>${systemStatus.system_capacity?.current_researchers || 0}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                                    <span>监控中</span>
+                                    <span>${systemStatus.monitoring_status?.active_monitoring || 0}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                                    <span>可用槽位</span>
+                                    <span>${systemStatus.system_capacity?.available_slots || 0}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between;">
+                                    <span>利用率</span>
+                                    <span>${systemStatus.system_capacity?.utilization_percentage?.toFixed(1) || 0}%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="content-section glass">
+                            <div class="section-header">
+                                <h3 class="section-title">数据持久化说明</h3>
+                            </div>
+                            <div style="color: rgba(255,255,255,0.8); line-height: 1.6;">
+                                <p style="margin-bottom: 1rem;">
+                                    <strong>📊 数据保存位置：</strong><br>
+                                    所有数据保存在 <code>research_platform.db</code> 文件中
+                                </p>
+                                <p style="margin-bottom: 1rem;">
+                                    <strong>🔄 自动备份：</strong><br>
+                                    系统会自动保存所有导入的研究者数据和监控设置
+                                </p>
+                                <p style="margin-bottom: 1rem;">
+                                    <strong>⚠️ 注意事项：</strong><br>
+                                    请勿删除数据库文件，否则将丢失所有数据
+                                </p>
+                                <p>
+                                    <strong>🔧 数据恢复：</strong><br>
+                                    如果遇到数据问题，可以使用"重置示例数据"恢复基础数据
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+            } catch (error) {
+                console.error('加载系统状态失败:', error);
+                updateStatus('加载系统状态失败', 'error');
+                document.getElementById('system-loading').style.display = 'none';
+                document.getElementById('system-content').style.display = 'block';
+                document.getElementById('system-content').innerHTML = `
+                    <div class="content-section glass">
+                        <div style="text-align: center; padding: 2rem;">
+                            <h3 style="color: #ef4444; margin-bottom: 1rem;">❌ 无法加载系统状态</h3>
+                            <p style="color: rgba(255,255,255,0.7);">请检查系统连接后重试</p>
+                            <button class="btn btn-primary" onclick="loadSystemStatus()" style="margin-top: 1rem;">
+                                <i class="fas fa-sync"></i> 重试
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        async function refreshSystemStatus() {
+            updateStatus('正在刷新系统状态...', 'warning');
+            await loadSystemStatus();
+            updateStatus('系统状态已刷新', 'success');
+        }
+
+        async function resetSampleData() {
+            const confirmed = confirm('确定要重置示例数据吗？\n\n这将恢复5位示例研究者（如果不存在的话）');
+            if (!confirmed) return;
+            
+            try {
+                updateStatus('正在重置示例数据...', 'warning');
+                
+                const result = await apiCall('/api/reset_sample_data', {
+                    method: 'POST'
+                });
+                
+                updateStatus(result.message, 'success');
+                
+                // 刷新系统状态和其他数据
+                await Promise.all([
+                    loadSystemStatus(),
+                    loadAnalytics(),
+                    loadResearchers(1, '')
+                ]);
+                
+            } catch (error) {
+                console.error('重置示例数据失败:', error);
+                updateStatus('重置失败: ' + error.message, 'error');
+            }
+        }
                 
             } catch (error) {
                 console.error('加载监控设置失败:', error);
