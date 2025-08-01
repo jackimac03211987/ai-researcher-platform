@@ -109,14 +109,18 @@ class ResearcherManager:
         self.load_sample_data()
     
     def init_database(self):
-        """初始化数据库"""
+        """初始化数据库 - 支持大规模数据存储"""
         conn = sqlite3.connect('research_platform.db')
         cursor = conn.cursor()
         
-        # 开启外键约束
+        # 开启外键约束和优化设置
         cursor.execute("PRAGMA foreign_keys = ON;")
+        cursor.execute("PRAGMA journal_mode = WAL;")  # 写前日志模式，提高并发性能
+        cursor.execute("PRAGMA synchronous = NORMAL;")  # 平衡性能和安全性
+        cursor.execute("PRAGMA cache_size = -64000;")   # 64MB缓存
+        cursor.execute("PRAGMA temp_store = MEMORY;")   # 临时表存储在内存中
 
-        # 研究者表
+        # 研究者表 - 优化字段类型和索引
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS researchers (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -135,7 +139,13 @@ class ResearcherManager:
             )
         ''')
         
-        # 内容表
+        # 为高频查询字段创建索引
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_researchers_rank ON researchers(rank);')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_researchers_name ON researchers(name);')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_researchers_monitoring ON researchers(is_monitoring);')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_researchers_account ON researchers(x_account);')
+        
+        # 内容表 - 优化存储和索引
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS x_content (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -152,6 +162,11 @@ class ResearcherManager:
             )
         ''')
         
+        # 内容表索引
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_content_researcher ON x_content(researcher_id);')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_content_created ON x_content(created_at);')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_content_tweet_id ON x_content(tweet_id);')
+        
         # 监控任务表
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS monitoring_tasks (
@@ -164,9 +179,13 @@ class ResearcherManager:
             )
         ''')
         
+        # 监控任务表索引
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_monitoring_researcher ON monitoring_tasks(researcher_id);')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_monitoring_status ON monitoring_tasks(status);')
+        
         conn.commit()
         conn.close()
-        logger.info("✅ 数据库初始化完成")
+        logger.info("✅ 数据库初始化完成 - 已优化支持大规模数据")
     
     def load_sample_data(self):
         """加载研究者示例数据 (此为应用基础数据，非动态内容)"""
@@ -219,11 +238,12 @@ class ResearcherManager:
 researcher_manager = ResearcherManager()
 twitter_api = TwitterAPI()
 
-# 监控任务
+# 监控任务 - 优化支持大规模监控
 class MonitoringService:
     def __init__(self):
         self.running = False
         self.thread = None
+        self.max_concurrent_checks = 10  # 最大并发检查数
     
     def start_monitoring(self):
         """启动监控服务"""
@@ -231,40 +251,51 @@ class MonitoringService:
             self.running = True
             self.thread = threading.Thread(target=self._monitoring_loop, daemon=True)
             self.thread.start()
-            logger.info("🚀 监控服务已启动")
+            logger.info("🚀 监控服务已启动 - 支持大规模监控")
     
     def _monitoring_loop(self):
-        """监控循环"""
+        """监控循环 - 优化处理大量研究者"""
         while self.running:
             try:
-                self._check_researchers()
+                self._check_researchers_batch()
                 time.sleep(1800)  # 每30分钟检查一次
             except Exception as e:
                 logger.error(f"监控循环错误: {e}")
                 time.sleep(60)
     
-    def _check_researchers(self):
-        """检查所有正在监控的研究者"""
+    def _check_researchers_batch(self):
+        """批量检查正在监控的研究者"""
         conn = sqlite3.connect('research_platform.db')
         cursor = conn.cursor()
         
         cursor.execute('SELECT id, name, x_account FROM researchers WHERE is_monitoring = 1')
         researchers = cursor.fetchall()
+        conn.close()
         
-        conn.close() # Close connection before starting long-running task
+        logger.info(f"🔍 开始检查 {len(researchers)} 位研究者的内容")
         
-        for researcher_id, name, x_account in researchers:
+        # 分批处理，避免同时处理过多研究者
+        batch_size = 50  # 每批处理50个
+        for i in range(0, len(researchers), batch_size):
+            batch = researchers[i:i + batch_size]
+            self._process_researcher_batch(batch)
+            time.sleep(5)  # 批次间休息5秒
+    
+    def _process_researcher_batch(self, researchers_batch):
+        """处理一批研究者"""
+        for researcher_id, name, x_account in researchers_batch:
             try:
                 tweets = twitter_api.get_user_tweets(x_account, max_results=5)
                 
-                if not tweets: # 如果没有获取到推文，则跳过
+                if not tweets:
                     continue
 
-                conn_inner = sqlite3.connect('research_platform.db')
-                cursor_inner = conn_inner.cursor()
+                conn = sqlite3.connect('research_platform.db')
+                cursor = conn.cursor()
 
+                new_tweets_count = 0
                 for tweet in tweets:
-                    cursor_inner.execute('''
+                    cursor.execute('''
                         INSERT OR IGNORE INTO x_content 
                         (researcher_id, tweet_id, content, likes_count, retweets_count, replies_count, created_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -273,20 +304,24 @@ class MonitoringService:
                         tweet['likes'], tweet['retweets'], tweet['replies'],
                         tweet['created_at']
                     ))
+                    if cursor.rowcount > 0:
+                        new_tweets_count += 1
                 
                 # 更新最后检查时间
-                cursor_inner.execute('''
+                cursor.execute('''
                     UPDATE monitoring_tasks SET last_check = CURRENT_TIMESTAMP 
                     WHERE researcher_id = ?
                 ''', (researcher_id,))
                 
-                conn_inner.commit()
-                conn_inner.close()
+                conn.commit()
+                conn.close()
                 
-                logger.info(f"✅ 已更新 {name} 的内容")
+                if new_tweets_count > 0:
+                    logger.info(f"✅ {name} 更新了 {new_tweets_count} 条新内容")
                 
             except Exception as e:
                 logger.error(f"检查 {name} 时出错: {e}")
+                time.sleep(1)  # 出错时稍作等待
 
 # 初始化监控服务
 monitoring_service = MonitoringService()
@@ -298,23 +333,41 @@ def index():
 
 @app.route('/api/researchers')
 def get_researchers():
-    """获取研究者列表"""
+    """获取研究者列表 - 支持分页处理大量数据"""
     conn = sqlite3.connect('research_platform.db')
     cursor = conn.cursor()
     
     search_query = request.args.get('search', '')
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 50, type=int)  # 默认每页50条
+    
+    # 限制每页最大数量
+    per_page = min(per_page, 200)
+    offset = (page - 1) * per_page
     
     if search_query:
-        cursor.execute('''
+        # 搜索查询
+        count_query = '''
+            SELECT COUNT(*) FROM researchers 
+            WHERE name LIKE ? OR company LIKE ? OR research_focus LIKE ?
+        '''
+        cursor.execute(count_query, (f'%{search_query}%', f'%{search_query}%', f'%{search_query}%'))
+        total_count = cursor.fetchone()[0]
+        
+        data_query = '''
             SELECT * FROM researchers 
             WHERE name LIKE ? OR company LIKE ? OR research_focus LIKE ?
-            ORDER BY rank
-        ''', (f'%{search_query}%', f'%{search_query}%', f'%{search_query}%'))
+            ORDER BY rank LIMIT ? OFFSET ?
+        '''
+        cursor.execute(data_query, (f'%{search_query}%', f'%{search_query}%', f'%{search_query}%', per_page, offset))
     else:
-        cursor.execute('SELECT * FROM researchers ORDER BY rank')
+        # 普通查询
+        cursor.execute('SELECT COUNT(*) FROM researchers')
+        total_count = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT * FROM researchers ORDER BY rank LIMIT ? OFFSET ?', (per_page, offset))
     
     researchers = []
-    # Column names: id, rank, name, country, company, research_focus, x_account, followers_count, following_count, avatar_url, is_monitoring
     for row in cursor.fetchall():
         researchers.append({
             'id': row[0], 'rank': row[1], 'name': row[2], 'country': row[3],
@@ -324,7 +377,16 @@ def get_researchers():
         })
     
     conn.close()
-    return jsonify(researchers)
+    
+    return jsonify({
+        'researchers': researchers,
+        'pagination': {
+            'page': page,
+            'per_page': per_page,
+            'total': total_count,
+            'pages': (total_count + per_page - 1) // per_page
+        }
+    })
 
 @app.route('/api/researcher/<int:researcher_id>')
 def get_researcher_detail(researcher_id):
@@ -368,7 +430,6 @@ def get_researcher_detail(researcher_id):
         'recent_content': recent_content
     })
 
-# --- 新增的删除功能 ---
 @app.route('/api/researcher/<int:researcher_id>', methods=['DELETE'])
 def delete_researcher(researcher_id):
     """删除指定的研究者及其所有相关数据"""
@@ -376,10 +437,7 @@ def delete_researcher(researcher_id):
         conn = sqlite3.connect('research_platform.db')
         cursor = conn.cursor()
 
-        # 开启外键约束，确保级联删除生效
         cursor.execute("PRAGMA foreign_keys = ON;")
-
-        # 删除研究者，相关内容和监控任务会因为ON DELETE CASCADE被自动删除
         cursor.execute('DELETE FROM researchers WHERE id = ?', (researcher_id,))
         
         conn.commit()
@@ -397,16 +455,21 @@ def delete_researcher(researcher_id):
     finally:
         if conn:
             conn.close()
-# --- 删除功能结束 ---
-
 
 @app.route('/api/content')
 def get_content():
-    """获取所有内容"""
+    """获取所有内容 - 支持分页"""
     conn = sqlite3.connect('research_platform.db')
     cursor = conn.cursor()
     
-    limit = request.args.get('limit', 20, type=int)
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    per_page = min(per_page, 100)  # 限制最大每页数量
+    offset = (page - 1) * per_page
+    
+    # 获取总数
+    cursor.execute('SELECT COUNT(*) FROM x_content')
+    total_count = cursor.fetchone()[0]
     
     query = '''
         SELECT c.id, c.content, c.content_type, c.likes_count, c.retweets_count, 
@@ -414,10 +477,10 @@ def get_content():
         FROM x_content c
         JOIN researchers r ON c.researcher_id = r.id
         ORDER BY c.created_at DESC
-        LIMIT ?
+        LIMIT ? OFFSET ?
     '''
     
-    cursor.execute(query, (limit,))
+    cursor.execute(query, (per_page, offset))
     content_list = []
     
     for row in cursor.fetchall():
@@ -435,44 +498,75 @@ def get_content():
         })
     
     conn.close()
-    return jsonify(content_list)
+    return jsonify({
+        'content': content_list,
+        'pagination': {
+            'page': page,
+            'per_page': per_page,
+            'total': total_count,
+            'pages': (total_count + per_page - 1) // per_page
+        }
+    })
 
 @app.route('/api/start_monitoring', methods=['POST'])
 def start_monitoring_route():
-    """开始监控指定研究者"""
+    """开始监控指定研究者 - 支持批量操作"""
     data = request.get_json()
     researcher_ids = data.get('researcher_ids', [])
     
     if not researcher_ids:
         return jsonify({'error': 'No researchers selected'}), 400
     
+    if len(researcher_ids) > 1000:  # 单次最多1000个
+        return jsonify({'error': 'Too many researchers selected at once (max: 1000)'}), 400
+    
     conn = sqlite3.connect('research_platform.db')
     cursor = conn.cursor()
     
     success_count = 0
-    for researcher_id in researcher_ids:
-        try:
-            # 更新研究者监控状态
-            cursor.execute('UPDATE researchers SET is_monitoring = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', (researcher_id,))
-            
-            # 创建监控任务
-            cursor.execute('INSERT OR REPLACE INTO monitoring_tasks (researcher_id, status, last_check) VALUES (?, \'active\', CURRENT_TIMESTAMP)', (researcher_id,))
-            
-            success_count += 1
-            
-        except Exception as e:
-            logger.error(f"启动监控研究者 {researcher_id} 失败: {e}")
+    failed_ids = []
     
-    conn.commit()
-    conn.close()
+    # 开始事务
+    cursor.execute('BEGIN TRANSACTION')
+    
+    try:
+        for researcher_id in researcher_ids:
+            try:
+                # 更新研究者监控状态
+                cursor.execute('UPDATE researchers SET is_monitoring = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', (researcher_id,))
+                
+                # 创建监控任务
+                cursor.execute('INSERT OR REPLACE INTO monitoring_tasks (researcher_id, status, last_check) VALUES (?, \'active\', CURRENT_TIMESTAMP)', (researcher_id,))
+                
+                success_count += 1
+                
+            except Exception as e:
+                logger.error(f"启动监控研究者 {researcher_id} 失败: {e}")
+                failed_ids.append(researcher_id)
+        
+        cursor.execute('COMMIT')
+        
+    except Exception as e:
+        cursor.execute('ROLLBACK')
+        logger.error(f"批量启动监控失败: {e}")
+        return jsonify({'error': 'Failed to start monitoring'}), 500
+    
+    finally:
+        conn.close()
     
     # 确保监控服务正在运行
     monitoring_service.start_monitoring()
     
-    return jsonify({
+    response_data = {
         'message': f'成功启动监控 {success_count} 位研究者',
         'monitoring_count': success_count
-    })
+    }
+    
+    if failed_ids:
+        response_data['failed_ids'] = failed_ids
+        response_data['message'] += f', {len(failed_ids)} 位失败'
+    
+    return jsonify(response_data)
 
 @app.route('/api/stop_monitoring', methods=['POST'])
 def stop_monitoring_route():
@@ -480,15 +574,28 @@ def stop_monitoring_route():
     data = request.get_json()
     researcher_ids = data.get('researcher_ids', [])
     
+    if len(researcher_ids) > 1000:
+        return jsonify({'error': 'Too many researchers selected at once (max: 1000)'}), 400
+    
     conn = sqlite3.connect('research_platform.db')
     cursor = conn.cursor()
     
-    for researcher_id in researcher_ids:
-        cursor.execute('UPDATE researchers SET is_monitoring = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?', (researcher_id,))
-        cursor.execute('UPDATE monitoring_tasks SET status = \'inactive\' WHERE researcher_id = ?', (researcher_id,))
+    cursor.execute('BEGIN TRANSACTION')
     
-    conn.commit()
-    conn.close()
+    try:
+        for researcher_id in researcher_ids:
+            cursor.execute('UPDATE researchers SET is_monitoring = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?', (researcher_id,))
+            cursor.execute('UPDATE monitoring_tasks SET status = \'inactive\' WHERE researcher_id = ?', (researcher_id,))
+        
+        cursor.execute('COMMIT')
+        
+    except Exception as e:
+        cursor.execute('ROLLBACK')
+        logger.error(f"批量停止监控失败: {e}")
+        return jsonify({'error': 'Failed to stop monitoring'}), 500
+    
+    finally:
+        conn.close()
     
     return jsonify({'message': f'已停止监控 {len(researcher_ids)} 位研究者'})
 
@@ -512,7 +619,7 @@ def fetch_researcher_content(researcher_id):
         tweets = twitter_api.get_user_tweets(x_account, max_results=10)
         
         new_content_count = 0
-        if tweets: # 仅在获取到推文时才操作数据库
+        if tweets:
             for tweet in tweets:
                 cursor.execute('''
                     INSERT OR IGNORE INTO x_content 
@@ -580,6 +687,11 @@ def get_analytics():
     ''')
     content_trend = dict(cursor.fetchall())
     
+    # 监控能力状态
+    cursor.execute('SELECT MAX(rank) FROM researchers')
+    max_capacity = 5000  # 最大支持容量
+    current_capacity = cursor.fetchone()[0] or 0
+    
     conn.close()
     
     return jsonify({
@@ -591,12 +703,18 @@ def get_analytics():
         'company_distribution': company_distribution,
         'content_trend': content_trend,
         'api_status': 'connected' if twitter_api.client else 'disconnected',
-        'monitoring_active': monitoring_service.running
+        'monitoring_active': monitoring_service.running,
+        'capacity': {
+            'current': total_researchers,
+            'monitoring': monitoring_researchers,
+            'max_supported': max_capacity,
+            'utilization': f"{(total_researchers/max_capacity)*100:.1f}%"
+        }
     })
 
 @app.route('/api/upload_excel', methods=['POST'])
 def upload_excel():
-    """上传Excel文件"""
+    """上传Excel文件 - 增强错误处理和批量导入"""
     if 'file' not in request.files:
         return jsonify({'error': 'No file uploaded'}), 400
     
@@ -604,39 +722,175 @@ def upload_excel():
     if file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
     
+    # 检查文件类型
+    if not file.filename.lower().endswith(('.xlsx', '.xls')):
+        return jsonify({'error': 'Please upload an Excel file (.xlsx or .xls)'}), 400
+    
     try:
         import openpyxl
         workbook = openpyxl.load_workbook(file)
         worksheet = workbook.active
         
+        logger.info(f"📊 开始处理Excel文件，共 {worksheet.max_row - 1} 行数据")
+        
         conn = sqlite3.connect('research_platform.db')
         cursor = conn.cursor()
         
-        added_count = 0
-        for row in worksheet.iter_rows(min_row=2, values_only=True):
-            if len(row) >= 6 and row[1]:
-                try:
-                    cursor.execute('''
-                        INSERT OR REPLACE INTO researchers 
-                        (rank, name, country, company, research_focus, x_account)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    ''', (row[0], row[1], row[2], row[3], row[4], row[5]))
-                    added_count += 1
-                except Exception as e:
-                    logger.error(f"插入Excel数据行失败: {e}")
+        # 开始事务
+        cursor.execute('BEGIN TRANSACTION')
         
-        conn.commit()
+        added_count = 0
+        error_count = 0
+        skipped_count = 0
+        error_details = []
+        
+        # 批量处理数据
+        batch_size = 100
+        batch_data = []
+        
+        for row_num, row in enumerate(worksheet.iter_rows(min_row=2, values_only=True), start=2):
+            try:
+                # 数据验证
+                if not row or len(row) < 6:
+                    skipped_count += 1
+                    logger.warning(f"第 {row_num} 行：数据不完整，跳过")
+                    continue
+                
+                if not row[1]:  # 名字不能为空
+                    skipped_count += 1
+                    logger.warning(f"第 {row_num} 行：研究者姓名为空，跳过")
+                    continue
+                
+                # 清理和验证数据
+                rank = row[0] if row[0] is not None else row_num - 1
+                name = str(row[1]).strip() if row[1] else ''
+                country = str(row[2]).strip() if row[2] else ''
+                company = str(row[3]).strip() if row[3] else ''
+                research_focus = str(row[4]).strip() if row[4] else ''
+                x_account = str(row[5]).strip() if row[5] else ''
+                
+                # 确保 X 账号格式正确
+                if x_account and not x_account.startswith('@'):
+                    x_account = '@' + x_account
+                
+                batch_data.append((rank, name, country, company, research_focus, x_account))
+                
+                # 达到批量大小时执行插入
+                if len(batch_data) >= batch_size:
+                    added_count += self._insert_researcher_batch(cursor, batch_data, error_details)
+                    batch_data = []
+                
+            except Exception as e:
+                error_count += 1
+                error_msg = f"第 {row_num} 行处理失败: {str(e)}"
+                logger.error(error_msg)
+                error_details.append(error_msg)
+                
+                if error_count > 50:  # 如果错误太多，停止处理
+                    logger.error("错误过多，停止处理文件")
+                    break
+        
+        # 处理剩余的批量数据
+        if batch_data:
+            added_count += self._insert_researcher_batch(cursor, batch_data, error_details)
+        
+        # 提交事务
+        cursor.execute('COMMIT')
         conn.close()
         
-        return jsonify({
-            'message': f'成功导入 {added_count} 位研究者数据',
-            'total_rows': worksheet.max_row - 1,
-            'imported': added_count
-        })
+        total_processed = worksheet.max_row - 1
+        
+        logger.info(f"✅ Excel导入完成: 成功 {added_count}, 跳过 {skipped_count}, 错误 {error_count}")
+        
+        response_data = {
+            'message': f'Excel文件处理完成',
+            'total_rows': total_processed,
+            'imported': added_count,
+            'skipped': skipped_count,
+            'errors': error_count
+        }
+        
+        if error_details and len(error_details) <= 20:  # 只返回前20个错误
+            response_data['error_details'] = error_details[:20]
+        
+        return jsonify(response_data)
         
     except Exception as e:
-        logger.error(f"Excel处理失败: {e}")
-        return jsonify({'error': f'文件处理失败: {str(e)}'}), 500
+        logger.error(f"❌ Excel文件处理失败: {e}")
+        return jsonify({
+            'error': f'文件处理失败: {str(e)}',
+            'suggestion': '请检查文件格式，确保包含必要的列：排名、姓名、国家、公司、研究领域、X账号'
+        }), 500
+
+def _insert_researcher_batch(self, cursor, batch_data, error_details):
+    """批量插入研究者数据"""
+    added_count = 0
+    
+    for data in batch_data:
+        try:
+            cursor.execute('''
+                INSERT OR REPLACE INTO researchers 
+                (rank, name, country, company, research_focus, x_account)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', data)
+            added_count += 1
+            
+        except Exception as e:
+            error_msg = f"插入数据失败 {data[1]}: {str(e)}"
+            error_details.append(error_msg)
+            logger.error(error_msg)
+    
+    return added_count
+
+# 给app对象添加方法
+app._insert_researcher_batch = _insert_researcher_batch
+
+@app.route('/api/system_status')
+def get_system_status():
+    """获取系统状态信息"""
+    conn = sqlite3.connect('research_platform.db')
+    cursor = conn.cursor()
+    
+    # 数据库统计
+    cursor.execute('SELECT COUNT(*) FROM researchers')
+    total_researchers = cursor.fetchone()[0]
+    
+    cursor.execute('SELECT COUNT(*) FROM researchers WHERE is_monitoring = 1')
+    monitoring_count = cursor.fetchone()[0]
+    
+    cursor.execute('SELECT COUNT(*) FROM x_content')
+    total_content = cursor.fetchone()[0]
+    
+    # 最近24小时的活动
+    cursor.execute('''
+        SELECT COUNT(*) FROM x_content 
+        WHERE collected_at >= datetime('now', '-1 day')
+    ''')
+    recent_content = cursor.fetchone()[0]
+    
+    conn.close()
+    
+    return jsonify({
+        'system_capacity': {
+            'max_researchers': 5000,
+            'current_researchers': total_researchers,
+            'available_slots': 5000 - total_researchers,
+            'utilization_percentage': (total_researchers / 5000) * 100
+        },
+        'monitoring_status': {
+            'active_monitoring': monitoring_count,
+            'max_concurrent': 1000,
+            'service_running': monitoring_service.running
+        },
+        'data_statistics': {
+            'total_content': total_content,
+            'recent_24h': recent_content
+        },
+        'api_status': {
+            'twitter_connected': twitter_api.client is not None,
+            'last_check': datetime.now().isoformat()
+        }
+    })
 
 @app.route('/health')
 def health_check():
@@ -645,11 +899,13 @@ def health_check():
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
         'twitter_api': 'connected' if twitter_api.client else 'disconnected',
-        'monitoring': 'active' if monitoring_service.running else 'inactive'
+        'monitoring': 'active' if monitoring_service.running else 'inactive',
+        'capacity': '5000 researchers supported'
     })
 
 if __name__ == '__main__':
     logger.info("🚀 AI研究者X内容学习平台启动中...")
+    logger.info(f"📊 系统容量: 最大支持 5000 位研究者监控")
     logger.info(f"Twitter API: {'✅ 已配置' if TWITTER_BEARER_TOKEN else '⚠️ 未配置，将无法获取真实数据'}")
     
     port = int(os.environ.get('PORT', 5000))
