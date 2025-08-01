@@ -63,9 +63,15 @@ def insert_researcher_batch(cursor, batch_data, error_details):
 
 class TwitterAPI:
     def __init__(self):
+        self.client = None
+        self.api_working = False
+        
         if TWITTER_BEARER_TOKEN:
             try:
-                self.client = tweepy.Client(bearer_token=TWITTER_BEARER_TOKEN)
+                self.client = tweepy.Client(
+                    bearer_token=TWITTER_BEARER_TOKEN,
+                    wait_on_rate_limit=True  # 自动处理速率限制
+                )
                 logger.info("✅ Twitter API客户端初始化成功")
                 self.test_connection()
             except Exception as e:
@@ -79,13 +85,18 @@ class TwitterAPI:
         """测试API连接"""
         try:
             if self.client:
-                # 测试获取一个公开用户信息
-                user = self.client.get_user(username='elonmusk')
+                # 测试获取一个简单的用户信息
+                user = self.client.get_user(username='twitter', user_fields=['public_metrics'])
                 if user.data:
                     logger.info("🔗 Twitter API连接测试成功")
+                    self.api_working = True
                     return True
+                else:
+                    logger.error("❌ Twitter API测试失败：无法获取用户数据")
+                    self.api_working = False
         except Exception as e:
-            logger.error(f"API连接测试失败: {e}")
+            logger.error(f"❌ API连接测试失败: {e}")
+            self.api_working = False
         return False
     
     def get_user_info(self, username):
@@ -94,33 +105,59 @@ class TwitterAPI:
             logger.warning(f"Twitter客户端未配置，无法获取 {username} 的用户信息")
             return None
         
+        if not self.api_working:
+            logger.warning(f"Twitter API未正常工作，跳过获取 {username} 的用户信息")
+            return None
+        
         try:
-            # 移除@符号
-            username = username.replace('@', '')
+            # 清理用户名
+            username = username.replace('@', '').strip()
+            if not username:
+                logger.warning("用户名为空")
+                return None
             
-            # 获取用户信息
+            logger.info(f"🔍 正在获取用户信息: {username}")
+            
+            # 获取用户信息，增加更多字段
             user_response = self.client.get_user(
                 username=username,
-                user_fields=['public_metrics', 'profile_image_url']
+                user_fields=['public_metrics', 'profile_image_url', 'description', 'verified']
             )
             
-            if not user_response.data:
-                logger.warning(f"Twitter用户 {username} 不存在")
+            if not user_response or not user_response.data:
+                logger.warning(f"❌ Twitter用户 {username} 不存在或无法访问")
                 return None
             
             user = user_response.data
-            return {
+            public_metrics = getattr(user, 'public_metrics', {})
+            
+            user_info = {
                 'id': str(user.id),
                 'username': user.username,
                 'name': user.name,
-                'followers_count': user.public_metrics.get('followers_count', 0),
-                'following_count': user.public_metrics.get('following_count', 0),
-                'tweet_count': user.public_metrics.get('tweet_count', 0),
-                'profile_image_url': getattr(user, 'profile_image_url', '')
+                'followers_count': public_metrics.get('followers_count', 0),
+                'following_count': public_metrics.get('following_count', 0),
+                'tweet_count': public_metrics.get('tweet_count', 0),
+                'listed_count': public_metrics.get('listed_count', 0),
+                'profile_image_url': getattr(user, 'profile_image_url', ''),
+                'description': getattr(user, 'description', ''),
+                'verified': getattr(user, 'verified', False)
             }
             
+            logger.info(f"✅ 成功获取 {username} 的信息: {user_info['followers_count']} 关注者, {user_info['following_count']} 正在关注")
+            return user_info
+            
+        except tweepy.Unauthorized:
+            logger.error(f"❌ 无权访问用户 {username}，可能是私人账户或API权限不足")
+            return None
+        except tweepy.NotFound:
+            logger.error(f"❌ 用户 {username} 不存在")
+            return None
+        except tweepy.TooManyRequests:
+            logger.error(f"❌ API请求过于频繁，请稍后再试")
+            return None
         except Exception as e:
-            logger.error(f"获取 {username} 用户信息时发生错误: {e}")
+            logger.error(f"❌ 获取 {username} 用户信息时发生错误: {e}")
             return None
 
     def get_user_tweets(self, username, max_results=10, start_time=None, end_time=None):
@@ -131,43 +168,61 @@ class TwitterAPI:
             logger.warning(f"Twitter客户端未配置，无法获取 {username} 的推文")
             return []
         
+        if not self.api_working:
+            logger.warning(f"Twitter API未正常工作，跳过获取 {username} 的推文")
+            return []
+        
         try:
-            # 移除@符号
-            username = username.replace('@', '')
+            # 清理用户名
+            username = username.replace('@', '').strip()
+            if not username:
+                logger.warning("用户名为空")
+                return []
             
-            # 获取用户信息
+            logger.info(f"🔍 正在获取推文: {username}, 最大数量: {max_results}")
+            
+            # 首先获取用户信息
             user_response = self.client.get_user(username=username)
-            if not user_response.data:
-                logger.warning(f"Twitter用户 {username} 不存在")
+            if not user_response or not user_response.data:
+                logger.warning(f"❌ 无法找到用户 {username}")
                 return []
             
             user_id = user_response.data.id
+            logger.info(f"✅ 找到用户 {username}, ID: {user_id}")
             
-            # 设置时间范围
+            # 设置时间范围 - 如果没有指定，获取最近7天的内容
             if not start_time:
-                start_time = datetime(2025, 1, 1, tzinfo=timezone.utc)
+                start_time = datetime.now(timezone.utc) - timedelta(days=7)
             if not end_time:
                 end_time = datetime.now(timezone.utc)
+            
+            logger.info(f"📅 时间范围: {start_time} 到 {end_time}")
+            
+            # 限制最大结果数
+            max_results = min(max_results, 100)
             
             # 获取推文
             tweets_response = self.client.get_users_tweets(
                 id=user_id,
-                max_results=min(max_results, 100),
-                tweet_fields=['created_at', 'public_metrics', 'context_annotations', 'attachments'],
-                media_fields=['url', 'preview_image_url'],
+                max_results=max_results,
+                tweet_fields=[
+                    'created_at', 'public_metrics', 'context_annotations', 
+                    'attachments', 'author_id', 'conversation_id'
+                ],
+                media_fields=['url', 'preview_image_url', 'type'],
                 expansions=['attachments.media_keys'],
-                exclude=['retweets', 'replies'],
+                exclude=['retweets', 'replies'],  # 排除转发和回复
                 start_time=start_time,
                 end_time=end_time
             )
             
-            if not tweets_response.data:
-                logger.info(f"✅ 未找到 {username} 在指定时间范围内的推文")
+            if not tweets_response or not tweets_response.data:
+                logger.info(f"ℹ️ 未找到 {username} 在指定时间范围内的推文")
                 return []
             
             # 处理媒体信息
             media_dict = {}
-            if tweets_response.includes and 'media' in tweets_response.includes:
+            if hasattr(tweets_response, 'includes') and tweets_response.includes and 'media' in tweets_response.includes:
                 for media in tweets_response.includes['media']:
                     media_dict[media.media_key] = {
                         'type': media.type,
@@ -177,35 +232,55 @@ class TwitterAPI:
             
             result = []
             for tweet in tweets_response.data:
-                # 处理媒体附件
-                media_urls = []
-                if hasattr(tweet, 'attachments') and tweet.attachments and 'media_keys' in tweet.attachments:
-                    for media_key in tweet.attachments['media_keys']:
-                        if media_key in media_dict:
-                            media_info = media_dict[media_key]
-                            media_urls.append({
-                                'type': media_info['type'],
-                                'url': media_info['url'],
-                                'preview_url': media_info['preview_url']
-                            })
-                
-                result.append({
-                    'id': str(tweet.id),
-                    'content': tweet.text,
-                    'created_at': tweet.created_at.isoformat() if tweet.created_at else None,
-                    'likes': tweet.public_metrics.get('like_count', 0),
-                    'retweets': tweet.public_metrics.get('retweet_count', 0),
-                    'replies': tweet.public_metrics.get('reply_count', 0),
-                    'author': username,
-                    'type': 'text',
-                    'media_urls': media_urls
-                })
+                try:
+                    # 处理媒体附件
+                    media_urls = []
+                    if hasattr(tweet, 'attachments') and tweet.attachments and 'media_keys' in tweet.attachments:
+                        for media_key in tweet.attachments['media_keys']:
+                            if media_key in media_dict:
+                                media_info = media_dict[media_key]
+                                media_urls.append({
+                                    'type': media_info['type'],
+                                    'url': media_info['url'],
+                                    'preview_url': media_info['preview_url']
+                                })
+                    
+                    # 获取互动数据
+                    public_metrics = getattr(tweet, 'public_metrics', {})
+                    
+                    tweet_data = {
+                        'id': str(tweet.id),
+                        'content': tweet.text or '',
+                        'created_at': tweet.created_at.isoformat() if tweet.created_at else None,
+                        'likes': public_metrics.get('like_count', 0),
+                        'retweets': public_metrics.get('retweet_count', 0),
+                        'replies': public_metrics.get('reply_count', 0),
+                        'quotes': public_metrics.get('quote_count', 0),
+                        'author': username,
+                        'type': 'text',
+                        'media_urls': media_urls
+                    }
+                    
+                    result.append(tweet_data)
+                    
+                except Exception as e:
+                    logger.error(f"❌ 处理推文时出错: {e}")
+                    continue
             
             logger.info(f"✅ 成功获取 {username} 的 {len(result)} 条推文")
             return result
             
+        except tweepy.Unauthorized:
+            logger.error(f"❌ 无权访问用户 {username} 的推文，可能是私人账户")
+            return []
+        except tweepy.NotFound:
+            logger.error(f"❌ 用户 {username} 不存在")
+            return []
+        except tweepy.TooManyRequests:
+            logger.error(f"❌ API请求过于频繁，请稍后再试")
+            return []
         except Exception as e:
-            logger.error(f"获取 {username} 推文时发生错误: {e}")
+            logger.error(f"❌ 获取 {username} 推文时发生错误: {e}")
             return []
 
 class ResearcherManager:
@@ -1246,7 +1321,7 @@ def update_user_info(researcher_id):
         user_info = twitter_api.get_user_info(x_account) if twitter_api else None
         
         if user_info:
-            # 更新数据库中的用户信息
+            # 更新数据库中的用户信息 - 直接存储数字而不是格式化字符串
             cursor.execute('''
                 UPDATE researchers 
                 SET followers_count = ?, following_count = ?, updated_at = CURRENT_TIMESTAMP
@@ -1304,7 +1379,7 @@ def update_all_user_info():
                     logger.warning(f"⚠️ 无法获取 {name} 的用户信息")
                 
                 # 添加延迟，避免API限制
-                time.sleep(1)
+                time.sleep(2)  # 增加延迟到2秒
                 
             except Exception as e:
                 failed_count += 1
@@ -1348,6 +1423,8 @@ def fetch_historical_content(researcher_id):
         start_time = datetime.strptime(start_date, '%Y-%m-%d').replace(tzinfo=timezone.utc) if start_date else None
         end_time = datetime.strptime(end_date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
         
+        logger.info(f"🔍 开始抓取 {name} 的历史内容，时间范围: {start_date} 到 {end_date}")
+        
         # 获取历史推文
         tweets = twitter_api.get_user_tweets(
             x_account, 
@@ -1382,6 +1459,8 @@ def fetch_historical_content(researcher_id):
         
         period = f"{start_date} 到 {end_date}" if start_date else f"所有时间到 {end_date}"
         message = f'成功抓取 {name} 在 {period} 期间的历史内容'
+        
+        logger.info(f"✅ {message}，新增 {new_content_count} 条，总获取 {len(tweets)} 条")
         
         return jsonify({
             'message': message,
@@ -1680,6 +1759,7 @@ def get_system_status():
         },
         'api_status': {
             'twitter_connected': twitter_api and twitter_api.client is not None,
+            'twitter_working': twitter_api and twitter_api.api_working,
             'last_check': datetime.now().isoformat()
         }
     })
@@ -1721,6 +1801,7 @@ def health_check():
         'status': 'healthy' if researcher_manager else 'partial',
         'timestamp': datetime.now().isoformat(),
         'twitter_api': 'connected' if twitter_api and twitter_api.client else 'disconnected',
+        'twitter_working': twitter_api and twitter_api.api_working,
         'monitoring': 'active' if monitoring_service and monitoring_service.running else 'inactive',
         'capacity': '5000 researchers supported',
         'components': {
@@ -1742,6 +1823,57 @@ def get_init_status():
         },
         'ready': bool(researcher_manager and twitter_api and monitoring_service)
     })
+
+@app.route('/api/test_twitter/<int:researcher_id>', methods=['POST'])
+def test_twitter_api(researcher_id):
+    """测试Twitter API连接和数据获取"""
+    try:
+        conn = sqlite3.connect('research_platform.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT name, x_account FROM researchers WHERE id = ?', (researcher_id,))
+        researcher = cursor.fetchone()
+        
+        if not researcher:
+            conn.close()
+            return jsonify({'error': 'Researcher not found'}), 404
+        
+        name, x_account = researcher
+        conn.close()
+        
+        # 测试API连接
+        if not twitter_api:
+            return jsonify({
+                'error': 'Twitter API未初始化',
+                'name': name,
+                'x_account': x_account
+            }), 500
+        
+        # 测试获取用户信息
+        logger.info(f"🧪 测试获取 {name} ({x_account}) 的用户信息")
+        user_info = twitter_api.get_user_info(x_account)
+        
+        # 测试获取推文
+        logger.info(f"🧪 测试获取 {name} ({x_account}) 的推文")
+        tweets = twitter_api.get_user_tweets(x_account, max_results=5)
+        
+        return jsonify({
+            'message': f'测试完成',
+            'name': name,
+            'x_account': x_account,
+            'api_working': twitter_api.api_working,
+            'user_info': user_info,
+            'tweets_count': len(tweets) if tweets else 0,
+            'tweets_sample': tweets[:2] if tweets else [],  # 返回前2条作为样本
+            'test_results': {
+                'user_info_success': user_info is not None,
+                'tweets_success': tweets is not None and len(tweets) > 0
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"测试Twitter API失败: {e}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     logger.info("🚀 AI研究者X内容学习平台启动中...")
