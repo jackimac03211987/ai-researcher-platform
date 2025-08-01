@@ -426,6 +426,11 @@
             color: #22c55e;
         }
 
+        .action-btn.special-focus {
+            background: rgba(255, 193, 7, 0.2);
+            color: #ffc107;
+        }
+
         .controls {
             display: flex;
             gap: 1rem;
@@ -690,6 +695,27 @@
             background: rgba(59, 130, 246, 0.1) !important;
         }
 
+        .special-focus-card {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .special-focus-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #ffc107, #ff8f00);
+        }
+
+        .historical-content-item {
+            border-left: 3px solid #ffc107;
+            padding-left: 1rem;
+            margin-left: 1rem;
+        }
+
         .hidden { display: none !important; }
         .show { display: block !important; }
 
@@ -763,6 +789,13 @@
                                 <i class="fas fa-stream"></i>
                                 <span>X内容</span>
                                 <span class="nav-badge" id="content-count">-</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" data-view="special-focus">
+                                <i class="fas fa-star"></i>
+                                <span>特别关注</span>
+                                <span class="nav-badge" id="special-count">-</span>
                             </a>
                         </li>
                         <li class="nav-item">
@@ -977,6 +1010,7 @@
                 dashboard: '仪表板',
                 researchers: 'AI研究者',
                 content: 'X内容',
+                'special-focus': '特别关注',
                 analytics: '数据分析',
                 'monitoring-settings': '监控设置',
                 'system': '系统状态'
@@ -996,6 +1030,9 @@
                     break;
                 case 'content':
                     renderContent();
+                    break;
+                case 'special-focus':
+                    renderSpecialFocus();
                     break;
                 case 'analytics':
                     renderAnalytics();
@@ -1038,6 +1075,14 @@
                 // 更新统计数字
                 document.getElementById('researcher-count').textContent = analytics.total_researchers || '0';
                 document.getElementById('content-count').textContent = analytics.total_content || '0';
+                
+                // 更新特别关注数量
+                try {
+                    const specialFocus = await apiCall('/api/special_focus');
+                    document.getElementById('special-count').textContent = specialFocus.length || '0';
+                } catch (e) {
+                    console.warn('获取特别关注数量失败:', e);
+                }
                 
                 // 更新API状态
                 apiStatus = analytics.api_status || 'disconnected';
@@ -1182,6 +1227,9 @@
                         <button class="btn btn-secondary" onclick="showUploadModal()">
                             <i class="fas fa-upload"></i> 上传研究者数据
                         </button>
+                        <button class="btn btn-secondary" onclick="switchView('special-focus')">
+                            <i class="fas fa-star"></i> 特别关注
+                        </button>
                         <button class="btn btn-secondary" onclick="switchView('monitoring-settings')">
                             <i class="fas fa-cog"></i> 监控设置
                         </button>
@@ -1215,6 +1263,10 @@
                     <div style="display: flex; gap: 0.5rem;">
                         <button class="btn btn-primary" id="startMonitoringBtn">
                             <i class="fas fa-play"></i> 监控选中 (<span id="selectedCount">0</span>)
+                        </button>
+                        <button class="btn" id="specialFocusBtn" 
+                                style="background: rgba(255, 193, 7, 0.2); border: 1px solid rgba(255, 193, 7, 0.3); color: #ffc107;">
+                            <i class="fas fa-star"></i> 特别关注 (<span id="selectedCount2">0</span>)
                         </button>
                         <button class="btn" id="deleteSelectedBtn" 
                                 style="background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444;">
@@ -1292,6 +1344,9 @@
 
             // 监控按钮
             bindMonitoringButton();
+
+            // 特别关注按钮
+            bindSpecialFocusButton();
 
             // 删除按钮
             document.getElementById('deleteSelectedBtn').addEventListener('click', deleteBatchResearchers);
@@ -1803,6 +1858,376 @@
                 updateStatus('重置失败: ' + error.message, 'error');
             }
         }
+
+        // 特别关注相关函数
+        function bindSpecialFocusButton() {
+            const btn = document.getElementById('specialFocusBtn');
+            if (btn) {
+                btn.addEventListener('click', async () => {
+                    const selected = getSelectedResearchers();
+                    
+                    if (selected.length > 0) {
+                        await setSpecialFocus(selected, true);
+                        // 清除选择
+                        document.querySelectorAll('.researcher-checkbox').forEach(cb => cb.checked = false);
+                        document.getElementById('selectAll').checked = false;
+                        updateSelectedCount();
+                    } else {
+                        alert('请先选择要设为特别关注的研究者');
+                    }
+                });
+            }
+        }
+
+        async function setSpecialFocus(researcherIds, isSpecial = true) {
+            try {
+                updateStatus('正在设置特别关注...', 'warning');
+                
+                const result = await apiCall('/api/special_focus', {
+                    method: 'POST',
+                    body: JSON.stringify({ 
+                        researcher_ids: researcherIds,
+                        is_special: isSpecial
+                    })
+                });
+
+                // 更新本地状态
+                researcherIds.forEach(id => {
+                    const researcher = researchers.find(r => r.id === id);
+                    if (researcher) {
+                        researcher.is_special_focus = isSpecial;
+                    }
+                });
+                
+                updateStatus(result.message, 'success');
+                
+                // 重新渲染研究者列表
+                if (currentView === 'researchers') {
+                    document.getElementById('researchers-grid').innerHTML = renderResearcherCards();
+                    updateSelectedCount();
+                }
+                
+                // 刷新分析数据
+                await loadAnalytics();
+                
+            } catch (error) {
+                console.error('设置特别关注失败:', error);
+                updateStatus('设置特别关注失败: ' + error.message, 'error');
+            }
+        }
+
+        async function toggleSpecialFocus(researcherId) {
+            try {
+                const researcher = researchers.find(r => r.id === researcherId);
+                if (!researcher) return;
+
+                const isSpecial = !researcher.is_special_focus;
+                await setSpecialFocus([researcherId], isSpecial);
+                
+            } catch (error) {
+                console.error('切换特别关注状态失败:', error);
+                updateStatus('操作失败: ' + error.message, 'error');
+            }
+        }
+
+        function renderSpecialFocus() {
+            dynamicContent.innerHTML = `
+                <div class="loading" id="special-loading">
+                    <div class="spinner"></div>
+                </div>
+                <div id="special-container" style="display: none;">
+                    <div class="content-grid" id="special-grid">
+                        <!-- 特别关注的研究者卡片 -->
+                    </div>
+                </div>
+            `;
+            
+            loadSpecialFocus();
+        }
+
+        async function loadSpecialFocus() {
+            try {
+                const specialResearchers = await apiCall('/api/special_focus');
+                
+                document.getElementById('special-loading').style.display = 'none';
+                document.getElementById('special-container').style.display = 'block';
+                
+                if (specialResearchers.length === 0) {
+                    document.getElementById('special-grid').innerHTML = `
+                        <div style="grid-column: 1/-1; text-align: center; padding: 4rem;">
+                            <div style="font-size: 4rem; color: rgba(255,255,255,0.3); margin-bottom: 1rem;">⭐</div>
+                            <h3 style="margin-bottom: 1rem; color: rgba(255,255,255,0.7);">暂无特别关注</h3>
+                            <p style="color: rgba(255,255,255,0.5); margin-bottom: 2rem;">在研究者页面选择研究者并点击"特别关注"按钮</p>
+                            <button class="btn btn-primary" onclick="switchView('researchers')">
+                                <i class="fas fa-users"></i> 前往研究者页面
+                            </button>
+                        </div>
+                    `;
+                    return;
+                }
+
+                document.getElementById('special-grid').innerHTML = specialResearchers.map(researcher => `
+                    <div class="researcher-card glass glass-hover" style="cursor: pointer;" 
+                         onclick="showHistoricalContent(${researcher.id})">
+                        <div class="researcher-header">
+                            <div class="researcher-avatar">${getInitials(researcher.name)}</div>
+                            <div>
+                                <h4>${researcher.name}</h4>
+                                <p style="color: rgba(255,255,255,0.7); font-size: 0.875rem;">${researcher.x_account}</p>
+                            </div>
+                            <span class="researcher-rank" style="background: linear-gradient(45deg, #ffc107, #ff8f00);">
+                                <i class="fas fa-star"></i> 特别关注
+                            </span>
+                        </div>
+                        <div class="researcher-meta">
+                            <span><i class="fas fa-map-marker-alt"></i> ${researcher.country}</span>
+                            <span><i class="fas fa-building"></i> ${researcher.company}</span>
+                        </div>
+                        <div class="researcher-research">${researcher.research_focus}</div>
+                        <div class="researcher-stats">
+                            <span><strong>${researcher.followers_count}</strong> 关注者</span>
+                            <span><strong>${researcher.following_count}</strong> 正在关注</span>
+                            ${researcher.is_monitoring ? '<span style="color: #22c55e;"><i class="fas fa-circle"></i> 监控中</span>' : ''}
+                        </div>
+                        
+                        <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                            <button class="btn btn-primary" onclick="event.stopPropagation(); showHistoricalModal(${researcher.id})">
+                                <i class="fas fa-history"></i> 抓取历史
+                            </button>
+                            <button class="btn btn-secondary" onclick="event.stopPropagation(); showHistoricalContent(${researcher.id})">
+                                <i class="fas fa-eye"></i> 查看历史
+                            </button>
+                            <button class="btn btn-secondary" onclick="event.stopPropagation(); exportToWord(${researcher.id})">
+                                <i class="fas fa-download"></i> 导出Word
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+                
+                // 更新导航中的特别关注数量
+                document.getElementById('special-count').textContent = specialResearchers.length;
+                
+            } catch (error) {
+                console.error('加载特别关注失败:', error);
+                updateStatus('加载特别关注失败', 'error');
+            }
+        }
+
+        function showHistoricalModal(researcherId) {
+            const researcher = researchers.find(r => r.id === researcherId);
+            if (!researcher) return;
+
+            const modal = document.createElement('div');
+            modal.className = 'modal show';
+            modal.innerHTML = `
+                <div class="modal-content glass">
+                    <div class="modal-header">
+                        <h2>抓取 ${researcher.name} 的历史内容</h2>
+                        <button class="modal-close" onclick="this.closest('.modal').remove()">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div style="padding: 1rem;">
+                        <div style="margin-bottom: 1rem;">
+                            <label style="display: block; margin-bottom: 0.5rem; color: white;">开始日期（可选，不填则抓取所有历史）:</label>
+                            <input type="date" id="startDate" style="width: 100%; padding: 0.5rem; border: none; border-radius: 8px; background: rgba(255,255,255,0.1); color: white;">
+                        </div>
+                        <div style="margin-bottom: 1rem;">
+                            <label style="display: block; margin-bottom: 0.5rem; color: white;">结束日期:</label>
+                            <input type="date" id="endDate" value="${new Date().toISOString().split('T')[0]}" style="width: 100%; padding: 0.5rem; border: none; border-radius: 8px; background: rgba(255,255,255,0.1); color: white;">
+                        </div>
+                        <div style="margin-bottom: 2rem;">
+                            <label style="display: block; margin-bottom: 0.5rem; color: white;">最大抓取数量:</label>
+                            <select id="maxResults" style="width: 100%; padding: 0.5rem; border: none; border-radius: 8px; background: rgba(255,255,255,0.1); color: white;">
+                                <option value="50">50条</option>
+                                <option value="100" selected>100条</option>
+                                <option value="200">200条</option>
+                                <option value="500">500条</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; gap: 1rem;">
+                            <button class="btn btn-primary" onclick="fetchHistoricalContent(${researcherId}, this.closest('.modal'))">
+                                <i class="fas fa-download"></i> 开始抓取
+                            </button>
+                            <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">
+                                取消
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+        }
+
+        async function fetchHistoricalContent(researcherId, modal) {
+            try {
+                const startDate = modal.querySelector('#startDate').value;
+                const endDate = modal.querySelector('#endDate').value;
+                const maxResults = parseInt(modal.querySelector('#maxResults').value);
+                
+                updateStatus('正在抓取历史内容...', 'warning');
+                
+                const result = await apiCall(`/api/fetch_historical/${researcherId}`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        start_date: startDate || null,
+                        end_date: endDate,
+                        max_results: maxResults
+                    })
+                });
+                
+                updateStatus(result.message, 'success');
+                modal.remove();
+                
+                // 如果当前在特别关注页面，刷新显示
+                if (currentView === 'special-focus') {
+                    loadSpecialFocus();
+                }
+                
+            } catch (error) {
+                console.error('抓取历史内容失败:', error);
+                updateStatus('抓取失败: ' + error.message, 'error');
+            }
+        }
+
+        async function showHistoricalContent(researcherId) {
+            try {
+                currentView = 'historical-content';
+                updateStatus('正在加载历史内容...', 'warning');
+                
+                const response = await apiCall(`/api/historical_content/${researcherId}`);
+                const researcher = response.researcher;
+                const contents = response.content;
+                const pagination = response.pagination;
+                
+                // 更新页面标题
+                pageTitle.textContent = `${researcher.name} - 历史内容`;
+                
+                dynamicContent.innerHTML = `
+                    <div style="margin-bottom: 2rem;">
+                        <button class="btn btn-secondary" onclick="switchView('special-focus')">
+                            <i class="fas fa-arrow-left"></i> 返回特别关注
+                        </button>
+                    </div>
+                    
+                    <div class="content-section glass" style="margin-bottom: 2rem;">
+                        <div class="section-header">
+                            <h3 class="section-title">${researcher.name} 的历史内容</h3>
+                            <div style="display: flex; gap: 1rem;">
+                                <button class="btn btn-secondary" onclick="showHistoricalModal(${researcherId})">
+                                    <i class="fas fa-history"></i> 抓取更多
+                                </button>
+                                <button class="btn btn-primary" onclick="exportToWord(${researcherId})">
+                                    <i class="fas fa-download"></i> 导出Word
+                                </button>
+                            </div>
+                        </div>
+                        <p style="color: rgba(255,255,255,0.7);">
+                            共收集 ${pagination.total} 条内容，当前显示第 ${pagination.page} 页
+                        </p>
+                    </div>
+                    
+                    <div class="content-grid" style="grid-template-columns: 1fr;">
+                        ${contents.map(content => `
+                            <div class="content-card glass">
+                                <div class="content-header">
+                                    <div class="content-avatar">${getInitials(researcher.name)}</div>
+                                    <div>
+                                        <div class="content-author">${researcher.name}</div>
+                                        <div class="content-handle">${researcher.x_account}</div>
+                                    </div>
+                                    <div class="content-time">${formatTime(content.created_at)}</div>
+                                    ${content.is_historical ? '<span style="background: rgba(255, 193, 7, 0.2); color: #ffc107; padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.75rem;"><i class="fas fa-history"></i> 历史</span>' : ''}
+                                </div>
+                                <div class="content-text" style="margin-bottom: 1rem; white-space: pre-wrap;">${content.content}</div>
+                                
+                                ${content.media_urls && content.media_urls.length > 0 ? `
+                                <div style="margin-bottom: 1rem;">
+                                    <h4 style="margin-bottom: 0.5rem; color: rgba(255,255,255,0.8);">媒体内容:</h4>
+                                    ${content.media_urls.map(media => `
+                                        <div style="margin-bottom: 0.5rem; padding: 0.5rem; background: rgba(255,255,255,0.05); border-radius: 8px;">
+                                            <span style="color: #ffc107; margin-right: 0.5rem;">${media.type}</span>
+                                            ${media.url ? `<a href="${media.url}" target="_blank" style="color: #3b82f6; text-decoration: none;">查看原始媒体</a>` : ''}
+                                            ${media.preview_url && media.preview_url !== media.url ? `<a href="${media.preview_url}" target="_blank" style="color: #3b82f6; text-decoration: none; margin-left: 1rem;">预览</a>` : ''}
+                                        </div>
+                                    `).join('')}
+                                </div>
+                                ` : ''}
+                                
+                                <div class="content-actions">
+                                    <div class="content-action">
+                                        <i class="fas fa-comment"></i>
+                                        <span>${content.replies_count || 0}</span>
+                                    </div>
+                                    <div class="content-action">
+                                        <i class="fas fa-retweet"></i>
+                                        <span>${content.retweets_count || 0}</span>
+                                    </div>
+                                    <div class="content-action">
+                                        <i class="fas fa-heart"></i>
+                                        <span>${content.likes_count || 0}</span>
+                                    </div>
+                                    <div class="content-action">
+                                        <i class="fas fa-calendar"></i>
+                                        <span>${content.created_at ? new Date(content.created_at).toLocaleDateString() : '未知'}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    
+                    ${pagination.pages > 1 ? `
+                    <div class="glass" style="padding: 1rem; margin-top: 2rem; border-radius: 12px;">
+                        <div style="display: flex; justify-content: center; gap: 1rem;">
+                            ${pagination.page > 1 ? `<button class="btn btn-secondary" onclick="showHistoricalContent(${researcherId}, ${pagination.page - 1})">上一页</button>` : ''}
+                            <span style="color: rgba(255,255,255,0.7);">第 ${pagination.page} / ${pagination.pages} 页</span>
+                            ${pagination.page < pagination.pages ? `<button class="btn btn-secondary" onclick="showHistoricalContent(${researcherId}, ${pagination.page + 1})">下一页</button>` : ''}
+                        </div>
+                    </div>
+                    ` : ''}
+                `;
+                
+                updateStatus('历史内容加载完成', 'success');
+                
+            } catch (error) {
+                console.error('加载历史内容失败:', error);
+                updateStatus('加载历史内容失败: ' + error.message, 'error');
+            }
+        }
+
+        async function exportToWord(researcherId) {
+            try {
+                updateStatus('正在导出Word文档...', 'warning');
+                
+                const response = await fetch(`/api/export_word/${researcherId}`);
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = response.headers.get('Content-Disposition')?.split('filename=')[1] || 'content.docx';
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    
+                    updateStatus('Word文档导出成功', 'success');
+                } else {
+                    const error = await response.json();
+                    throw new Error(error.error || '导出失败');
+                }
+                
+            } catch (error) {
+                console.error('导出Word失败:', error);
+                updateStatus('导出失败: ' + error.message, 'error');
+                
+                if (error.message.includes('python-docx')) {
+                    alert('Word导出功能需要安装 python-docx 库\n请在服务器端运行: pip install python-docx');
+                }
+            }
+        }
                 
             } catch (error) {
                 console.error('加载监控设置失败:', error);
@@ -1948,9 +2373,21 @@
                                 title="${researcher.is_monitoring ? '停止监控' : '开始监控'}">
                             <i class="fas ${researcher.is_monitoring ? 'fa-pause' : 'fa-play'}"></i>
                         </button>
+                        <button class="action-btn ${researcher.is_special_focus ? 'special-focus' : ''}" 
+                                onclick="toggleSpecialFocus(${researcher.id})" 
+                                title="${researcher.is_special_focus ? '取消特别关注' : '设为特别关注'}"
+                                style="${researcher.is_special_focus ? 'background: rgba(255, 193, 7, 0.2); color: #ffc107;' : ''}">
+                            <i class="fas fa-star"></i>
+                        </button>
                         <button class="action-btn" onclick="fetchContent(${researcher.id})" title="立即获取内容">
                             <i class="fas fa-sync"></i>
                         </button>
+                        ${researcher.is_special_focus ? `
+                        <button class="action-btn" onclick="showHistoricalModal(${researcher.id})" title="查看历史"
+                                style="background: rgba(16, 185, 129, 0.2); color: #10b981;">
+                            <i class="fas fa-history"></i>
+                        </button>
+                        ` : ''}
                         <button class="action-btn" onclick="showResearcherModal(${researcher.id})" title="查看详情">
                             <i class="fas fa-eye"></i>
                         </button>
@@ -1977,6 +2414,7 @@
                         <span><strong>${researcher.followers_count}</strong> 关注者</span>
                         <span><strong>${researcher.following_count}</strong> 正在关注</span>
                         ${researcher.is_monitoring ? '<span style="color: #22c55e;"><i class="fas fa-circle"></i> 监控中</span>' : ''}
+                        ${researcher.is_special_focus ? '<span style="color: #ffc107;"><i class="fas fa-star"></i> 特别关注</span>' : ''}
                     </div>
                 </div>
             `).join('');
@@ -2251,8 +2689,12 @@
         function updateSelectedCount() {
             const selected = document.querySelectorAll('.researcher-checkbox:checked').length;
             const countElement = document.getElementById('selectedCount');
+            const countElement2 = document.getElementById('selectedCount2');
             if (countElement) {
                 countElement.textContent = selected;
+            }
+            if (countElement2) {
+                countElement2.textContent = selected;
             }
         }
 
@@ -2367,17 +2809,36 @@
                             <i class="fas fa-circle" style="font-size: 0.5rem;"></i>
                             ${researcher.is_monitoring ? '监控中' : '未监控'}
                         </span>
+                        <span style="color: ${researcher.is_special_focus ? '#ffc107' : '#6b7280'};">
+                            <i class="fas fa-star" style="font-size: 0.5rem;"></i>
+                            ${researcher.is_special_focus ? '特别关注' : '普通关注'}
+                        </span>
                     </div>
                 </div>
                 
-                <div style="display: flex; gap: 1rem;">
+                <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
                     <button class="btn btn-primary" onclick="toggleMonitoring(${researcher.id}); hideResearcherModal();">
                         <i class="fas ${researcher.is_monitoring ? 'fa-pause' : 'fa-play'}"></i>
                         ${researcher.is_monitoring ? '停止监控' : '开始监控'}
                     </button>
+                    <button class="btn" onclick="toggleSpecialFocus(${researcher.id}); hideResearcherModal();"
+                            style="background: ${researcher.is_special_focus ? 'rgba(255, 193, 7, 0.2)' : 'rgba(255, 255, 255, 0.1)'}; 
+                                   border: 1px solid ${researcher.is_special_focus ? 'rgba(255, 193, 7, 0.3)' : 'rgba(255, 255, 255, 0.2)'}; 
+                                   color: ${researcher.is_special_focus ? '#ffc107' : 'white'};">
+                        <i class="fas fa-star"></i>
+                        ${researcher.is_special_focus ? '取消特别关注' : '设为特别关注'}
+                    </button>
                     <button class="btn btn-secondary" onclick="fetchContent(${researcher.id}); hideResearcherModal();">
                         <i class="fas fa-sync"></i> 获取最新内容
                     </button>
+                    ${researcher.is_special_focus ? `
+                    <button class="btn btn-secondary" onclick="hideResearcherModal(); showHistoricalModal(${researcher.id});">
+                        <i class="fas fa-history"></i> 抓取历史
+                    </button>
+                    <button class="btn btn-secondary" onclick="hideResearcherModal(); showHistoricalContent(${researcher.id});">
+                        <i class="fas fa-eye"></i> 查看历史
+                    </button>
+                    ` : ''}
                 </div>
             `;
             
