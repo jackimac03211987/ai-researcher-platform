@@ -885,6 +885,9 @@
         let content = [];
         let analytics = {};
         let apiStatus = 'disconnected';
+        let currentPage = 1;
+        let totalPages = 1;
+        let searchQuery = '';
 
         // DOM元素
         const sidebar = document.getElementById('sidebar');
@@ -907,7 +910,7 @@
 
         function initializeApp() {
             loadAnalytics()
-                .then(() => loadResearchers())
+                .then(() => loadResearchers(1))
                 .then(() => {
                     updateStatus('系统运行正常', 'success');
                     renderCurrentView();
@@ -1041,21 +1044,35 @@
             }
         }
 
-        async function loadResearchers() {
+        async function loadResearchers(page = 1, search = '') {
             try {
-                const response = await apiCall('/api/researchers');
+                currentPage = page;
+                searchQuery = search;
+                
+                let url = `/api/researchers?page=${page}&per_page=20`;
+                if (search) {
+                    url += `&search=${encodeURIComponent(search)}`;
+                }
+                
+                const response = await apiCall(url);
+                
                 // 处理新的API响应格式
-                if (Array.isArray(response)) {
-                    researchers = response;
-                } else if (response.researchers) {
+                if (response.researchers) {
                     researchers = response.researchers;
+                    totalPages = response.pagination?.pages || 1;
+                } else if (Array.isArray(response)) {
+                    researchers = response;
+                    totalPages = 1;
                 } else {
                     researchers = [];
+                    totalPages = 1;
                 }
-                console.log('研究者数据加载成功:', researchers.length);
+                
+                console.log('研究者数据加载成功:', researchers.length, `页面 ${page}/${totalPages}`);
             } catch (error) {
                 console.error('加载研究者数据失败:', error);
                 researchers = [];
+                totalPages = 1;
             }
         }
 
@@ -1171,7 +1188,7 @@
                 <div class="controls">
                     <div class="search-box">
                         <i class="fas fa-search search-icon"></i>
-                        <input type="text" class="search-input" placeholder="搜索研究者..." id="researcherSearch">
+                        <input type="text" class="search-input" placeholder="搜索研究者..." id="researcherSearch" value="${searchQuery}">
                     </div>
                     <div style="display: flex; gap: 0.5rem; align-items: center;">
                         <label style="display: flex; align-items: center; gap: 0.5rem; color: white; cursor: pointer;">
@@ -1200,15 +1217,46 @@
                     <div class="spinner"></div>
                 </div>
 
-                <div class="content-grid" id="researchers-grid" style="display: none;">
-                    ${renderResearcherCards()}
+                <div id="researchers-container" style="display: none;">
+                    <div class="content-grid" id="researchers-grid">
+                        ${renderResearcherCards()}
+                    </div>
+                    
+                    <!-- 分页控件 -->
+                    <div class="glass" style="padding: 1rem; margin-top: 2rem; border-radius: 12px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div style="color: rgba(255,255,255,0.7);">
+                                显示第 ${((currentPage-1)*20)+1}-${Math.min(currentPage*20, researchers.length)} 条，共 ${totalPages * 20} 条
+                            </div>
+                            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                <button class="btn btn-secondary" id="prevPage" 
+                                        ${currentPage <= 1 ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''}>
+                                    <i class="fas fa-chevron-left"></i> 上一页
+                                </button>
+                                <div style="display: flex; gap: 0.25rem; margin: 0 1rem;">
+                                    ${renderPaginationNumbers()}
+                                </div>
+                                <button class="btn btn-secondary" id="nextPage"
+                                        ${currentPage >= totalPages ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''}>
+                                    下一页 <i class="fas fa-chevron-right"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             `;
 
             // 绑定搜索事件
-            document.getElementById('researcherSearch').addEventListener('input', (e) => {
-                filterResearchers(e.target.value);
-            });
+            document.getElementById('researcherSearch').addEventListener('input', debounce((e) => {
+                const query = e.target.value.trim();
+                loadResearchers(1, query).then(() => {
+                    document.getElementById('researchers-loading').style.display = 'none';
+                    document.getElementById('researchers-container').style.display = 'block';
+                    document.getElementById('researchers-grid').innerHTML = renderResearcherCards();
+                    bindPaginationEvents();
+                    updateSelectedCount();
+                });
+            }, 500));
 
             // 全选功能
             document.getElementById('selectAll').addEventListener('change', (e) => {
@@ -1241,9 +1289,102 @@
             // 模拟加载
             setTimeout(() => {
                 document.getElementById('researchers-loading').style.display = 'none';
-                document.getElementById('researchers-grid').style.display = 'grid';
+                document.getElementById('researchers-container').style.display = 'block';
+                bindPaginationEvents();
                 updateSelectedCount();
             }, 1000);
+        }
+
+        function renderPaginationNumbers() {
+            let html = '';
+            const maxVisible = 5;
+            let start = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+            let end = Math.min(totalPages, start + maxVisible - 1);
+            
+            if (end - start + 1 < maxVisible) {
+                start = Math.max(1, end - maxVisible + 1);
+            }
+            
+            for (let i = start; i <= end; i++) {
+                const isActive = i === currentPage;
+                html += `
+                    <button class="btn ${isActive ? 'btn-primary' : 'btn-secondary'}" 
+                            style="padding: 0.5rem 1rem; min-width: 40px;" 
+                            onclick="goToPage(${i})"
+                            ${isActive ? 'disabled' : ''}>
+                        ${i}
+                    </button>
+                `;
+            }
+            
+            return html;
+        }
+
+        function bindPaginationEvents() {
+            const prevBtn = document.getElementById('prevPage');
+            const nextBtn = document.getElementById('nextPage');
+            
+            if (prevBtn && !prevBtn.disabled) {
+                prevBtn.addEventListener('click', () => goToPage(currentPage - 1));
+            }
+            
+            if (nextBtn && !nextBtn.disabled) {
+                nextBtn.addEventListener('click', () => goToPage(currentPage + 1));
+            }
+        }
+
+        async function goToPage(page) {
+            if (page < 1 || page > totalPages || page === currentPage) return;
+            
+            document.getElementById('researchers-loading').style.display = 'flex';
+            document.getElementById('researchers-container').style.display = 'none';
+            
+            await loadResearchers(page, searchQuery);
+            
+            document.getElementById('researchers-loading').style.display = 'none';
+            document.getElementById('researchers-container').style.display = 'block';
+            document.getElementById('researchers-grid').innerHTML = renderResearcherCards();
+            
+            // 重新渲染分页控件
+            const paginationContainer = document.querySelector('.glass:has(#prevPage)');
+            if (paginationContainer) {
+                paginationContainer.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div style="color: rgba(255,255,255,0.7);">
+                            显示第 ${((currentPage-1)*20)+1}-${Math.min(currentPage*20, (currentPage-1)*20 + researchers.length)} 条
+                        </div>
+                        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                            <button class="btn btn-secondary" id="prevPage" 
+                                    ${currentPage <= 1 ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''}>
+                                <i class="fas fa-chevron-left"></i> 上一页
+                            </button>
+                            <div style="display: flex; gap: 0.25rem; margin: 0 1rem;">
+                                ${renderPaginationNumbers()}
+                            </div>
+                            <button class="btn btn-secondary" id="nextPage"
+                                    ${currentPage >= totalPages ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''}>
+                                下一页 <i class="fas fa-chevron-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            bindPaginationEvents();
+            updateSelectedCount();
+        }
+
+        // 防抖函数
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
         }
 
         function renderContent() {
@@ -1765,7 +1906,7 @@
             updateStatus('正在刷新数据...', 'warning');
             try {
                 await loadAnalytics();
-                await loadResearchers();
+                await loadResearchers(currentPage, searchQuery);
                 await loadContent();
                 renderCurrentView();
                 updateStatus('数据刷新完成', 'success');
@@ -1788,24 +1929,8 @@
         }
 
         function filterResearchers(query) {
-            const filteredResearchers = researchers.filter(researcher =>
-                researcher.name.toLowerCase().includes(query.toLowerCase()) ||
-                researcher.company.toLowerCase().includes(query.toLowerCase()) ||
-                researcher.research_focus.toLowerCase().includes(query.toLowerCase())
-            );
-            
-            const grid = document.getElementById('researchers-grid');
-            if (grid) {
-                if (filteredResearchers.length === 0) {
-                    grid.innerHTML = '<p style="text-align: center; color: rgba(255,255,255,0.7); grid-column: 1/-1;">没有找到匹配的研究者</p>';
-                } else {
-                    grid.innerHTML = filteredResearchers.map(researcher => 
-                        renderResearcherCards().split('data-id="' + researcher.id + '"')[0] + 
-                        'data-id="' + researcher.id + '"' + 
-                        renderResearcherCards().split('data-id="' + researcher.id + '"')[1]
-                    ).join('');
-                }
-            }
+            // 现在搜索通过服务器端处理，这个函数保留用于兼容性
+            console.log('搜索功能已移至服务器端处理');
         }
 
         function filterContent(type) {
@@ -1853,16 +1978,15 @@
                     method: 'DELETE'
                 });
 
-                // 从本地数组中移除
-                const index = researchers.findIndex(r => r.id === researcherId);
-                if (index > -1) {
-                    researchers.splice(index, 1);
-                }
-                
                 updateStatus(result.message, 'success');
                 
-                // 重新渲染研究者列表
-                if (currentView === 'researchers') {
+                // 重新加载当前页面数据
+                await loadResearchers(currentPage, searchQuery);
+                
+                // 如果当前页没有数据且不是第一页，跳转到前一页
+                if (researchers.length === 0 && currentPage > 1) {
+                    await goToPage(currentPage - 1);
+                } else if (currentView === 'researchers') {
                     document.getElementById('researchers-grid').innerHTML = renderResearcherCards();
                     updateSelectedCount();
                 }
@@ -1895,13 +2019,6 @@
             for (const id of selectedIds) {
                 try {
                     await apiCall(`/api/researcher/${id}`, { method: 'DELETE' });
-                    
-                    // 从本地数组中移除
-                    const index = researchers.findIndex(r => r.id === id);
-                    if (index > -1) {
-                        researchers.splice(index, 1);
-                    }
-                    
                     successCount++;
                 } catch (error) {
                     console.error(`删除研究者 ${id} 失败:`, error);
@@ -1911,8 +2028,13 @@
 
             updateStatus(`删除完成: 成功 ${successCount} 个，失败 ${errorCount} 个`, successCount > 0 ? 'success' : 'error');
             
-            // 重新渲染
-            if (currentView === 'researchers') {
+            // 重新加载当前页面数据
+            await loadResearchers(currentPage, searchQuery);
+            
+            // 如果当前页没有数据且不是第一页，跳转到前一页
+            if (researchers.length === 0 && currentPage > 1) {
+                await goToPage(currentPage - 1);
+            } else if (currentView === 'researchers') {
                 document.getElementById('researchers-grid').innerHTML = renderResearcherCards();
                 updateSelectedCount();
             }
@@ -2101,7 +2223,7 @@
                     
                     // 重新加载数据
                     await loadAnalytics();
-                    await loadResearchers();
+                    await loadResearchers(1, ''); // 重置到第一页
                     renderCurrentView();
                 } else {
                     updateStatus(`上传失败：${result.error}`, 'error');
