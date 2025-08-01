@@ -171,7 +171,7 @@
             padding: 1.5rem;
             border-radius: 16px;
             display: flex;
-            justify-content: between;
+            justify-content: space-between;
             align-items: center;
         }
 
@@ -681,6 +681,15 @@
             color: #ef4444;
         }
 
+        .interval-option {
+            transition: all 0.3s ease;
+        }
+
+        .interval-option.selected {
+            border: 2px solid #3b82f6 !important;
+            background: rgba(59, 130, 246, 0.1) !important;
+        }
+
         .hidden { display: none !important; }
         .show { display: block !important; }
 
@@ -760,6 +769,12 @@
                             <a href="#" class="nav-link" data-view="analytics">
                                 <i class="fas fa-chart-bar"></i>
                                 <span>数据分析</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" data-view="monitoring-settings">
+                                <i class="fas fa-cog"></i>
+                                <span>监控设置</span>
                             </a>
                         </li>
                         <li class="nav-item">
@@ -953,7 +968,8 @@
                 dashboard: '仪表板',
                 researchers: 'AI研究者',
                 content: 'X内容',
-                analytics: '数据分析'
+                analytics: '数据分析',
+                'monitoring-settings': '监控设置'
             };
             pageTitle.textContent = titles[view];
             
@@ -973,6 +989,9 @@
                     break;
                 case 'analytics':
                     renderAnalytics();
+                    break;
+                case 'monitoring-settings':
+                    renderMonitoringSettings();
                     break;
             }
         }
@@ -1024,18 +1043,33 @@
 
         async function loadResearchers() {
             try {
-                researchers = await apiCall('/api/researchers');
+                const response = await apiCall('/api/researchers');
+                // 处理新的API响应格式
+                if (Array.isArray(response)) {
+                    researchers = response;
+                } else if (response.researchers) {
+                    researchers = response.researchers;
+                } else {
+                    researchers = [];
+                }
                 console.log('研究者数据加载成功:', researchers.length);
             } catch (error) {
                 console.error('加载研究者数据失败:', error);
-                // 使用备用数据
                 researchers = [];
             }
         }
 
         async function loadContent() {
             try {
-                content = await apiCall('/api/content?limit=50');
+                const response = await apiCall('/api/content?limit=50');
+                // 处理新的API响应格式
+                if (Array.isArray(response)) {
+                    content = response;
+                } else if (response.content) {
+                    content = response.content;
+                } else {
+                    content = [];
+                }
                 console.log('内容数据加载成功:', content.length);
             } catch (error) {
                 console.error('加载内容数据失败:', error);
@@ -1121,6 +1155,9 @@
                         <button class="btn btn-secondary" onclick="showUploadModal()">
                             <i class="fas fa-upload"></i> 上传研究者数据
                         </button>
+                        <button class="btn btn-secondary" onclick="switchView('monitoring-settings')">
+                            <i class="fas fa-cog"></i> 监控设置
+                        </button>
                         <button class="btn btn-secondary" onclick="refreshData()">
                             <i class="fas fa-sync"></i> 刷新数据
                         </button>
@@ -1195,7 +1232,7 @@
                 filterByStatus(true);
             });
 
-            // 监控按钮 - 修正绑定
+            // 监控按钮
             bindMonitoringButton();
 
             // 删除按钮
@@ -1270,6 +1307,10 @@
                         </div>
                         <div style="padding: 1rem;">
                             <div style="display: flex; justify-content: space-between; margin-bottom: 1rem;">
+                                <span>监控间隔</span>
+                                <strong>${analytics.interval_display || '30分钟'}</strong>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 1rem;">
                                 <span>活跃监控</span>
                                 <strong>${analytics.monitoring_researchers || 0} 位研究者</strong>
                             </div>
@@ -1329,6 +1370,182 @@
                     </div>
                 </div>
             `;
+        }
+
+        function renderMonitoringSettings() {
+            dynamicContent.innerHTML = `
+                <div class="loading" id="settings-loading">
+                    <div class="spinner"></div>
+                </div>
+                <div id="settings-content" style="display: none;">
+                    <!-- 内容将通过loadMonitoringSettings动态加载 -->
+                </div>
+            `;
+            
+            loadMonitoringSettings();
+        }
+
+        async function loadMonitoringSettings() {
+            try {
+                const settings = await apiCall('/api/monitoring_settings');
+                
+                document.getElementById('settings-loading').style.display = 'none';
+                document.getElementById('settings-content').style.display = 'block';
+                document.getElementById('settings-content').innerHTML = `
+                    <div class="content-section glass">
+                        <div class="section-header">
+                            <h3 class="section-title">监控周期设置</h3>
+                            <span style="color: rgba(255,255,255,0.7); font-size: 0.875rem;">
+                                当前: ${settings.interval_display}
+                            </span>
+                        </div>
+                        
+                        <div style="margin-bottom: 2rem;">
+                            <p style="color: rgba(255,255,255,0.8); margin-bottom: 1.5rem;">
+                                设置系统监控所有研究者X账号的检查频率。较短的间隔可以更及时获取内容，但会消耗更多API配额。
+                            </p>
+                            
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+                                ${settings.predefined_intervals.map(interval => `
+                                    <div class="glass glass-hover interval-option" 
+                                         data-value="${interval.value}"
+                                         style="padding: 1.5rem; border-radius: 12px; cursor: pointer; text-align: center; 
+                                                ${settings.monitoring_interval === interval.value ? 'border: 2px solid #3b82f6; background: rgba(59, 130, 246, 0.1);' : ''}"
+                                         onclick="selectInterval(${interval.value})">
+                                        <h4 style="margin-bottom: 0.5rem;">${interval.label}</h4>
+                                        <p style="font-size: 0.875rem; color: rgba(255,255,255,0.7);">${interval.description}</p>
+                                    </div>
+                                `).join('')}
+                            </div>
+                            
+                            <div style="display: flex; gap: 1rem; align-items: center; margin-bottom: 2rem;">
+                                <label style="color: white;">自定义间隔（分钟）:</label>
+                                <input type="number" id="customInterval" min="5" max="10080" 
+                                       style="padding: 0.5rem; border: none; border-radius: 8px; background: rgba(255,255,255,0.1); color: white; width: 120px;"
+                                       placeholder="例如: 90">
+                                <button class="btn btn-secondary" onclick="setCustomInterval()">设置</button>
+                            </div>
+                            
+                            <div style="display: flex; gap: 1rem;">
+                                <button class="btn btn-primary" id="saveIntervalBtn" onclick="saveMonitoringInterval()">
+                                    <i class="fas fa-save"></i> 保存设置
+                                </button>
+                                <button class="btn btn-secondary" onclick="resetToDefault()">
+                                    <i class="fas fa-undo"></i> 恢复默认
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="content-section glass">
+                        <div class="section-header">
+                            <h3 class="section-title">监控状态信息</h3>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                            <div style="text-align: center;">
+                                <h3 style="font-size: 2rem; color: #3b82f6; margin-bottom: 0.5rem;">${settings.monitoring_interval}</h3>
+                                <p style="color: rgba(255,255,255,0.7);">当前间隔（秒）</p>
+                            </div>
+                            <div style="text-align: center;">
+                                <h3 style="font-size: 2rem; color: #10b981; margin-bottom: 0.5rem;" id="active-monitoring">-</h3>
+                                <p style="color: rgba(255,255,255,0.7);">活跃监控数</p>
+                            </div>
+                            <div style="text-align: center;">
+                                <h3 style="font-size: 2rem; color: #f59e0b; margin-bottom: 0.5rem;" id="next-check">-</h3>
+                                <p style="color: rgba(255,255,255,0.7);">下次检查</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // 更新监控统计
+                updateMonitoringStats();
+                
+            } catch (error) {
+                console.error('加载监控设置失败:', error);
+                updateStatus('加载监控设置失败', 'error');
+            }
+        }
+
+        let selectedIntervalValue = null;
+
+        function selectInterval(value) {
+            selectedIntervalValue = value;
+            
+            // 更新视觉选择状态
+            document.querySelectorAll('.interval-option').forEach(option => {
+                if (parseInt(option.dataset.value) === value) {
+                    option.style.border = '2px solid #3b82f6';
+                    option.style.background = 'rgba(59, 130, 246, 0.1)';
+                } else {
+                    option.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+                    option.style.background = 'rgba(255, 255, 255, 0.1)';
+                }
+            });
+        }
+
+        function setCustomInterval() {
+            const customMinutes = parseInt(document.getElementById('customInterval').value);
+            if (customMinutes && customMinutes >= 5 && customMinutes <= 10080) {
+                selectedIntervalValue = customMinutes * 60; // 转换为秒
+                
+                // 清除预设选项的选择状态
+                document.querySelectorAll('.interval-option').forEach(option => {
+                    option.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+                    option.style.background = 'rgba(255, 255, 255, 0.1)';
+                });
+                
+                updateStatus(`已选择自定义间隔: ${customMinutes}分钟`, 'success');
+            } else {
+                alert('请输入5-10080分钟之间的有效数值');
+            }
+        }
+
+        async function saveMonitoringInterval() {
+            if (!selectedIntervalValue) {
+                alert('请先选择一个监控间隔');
+                return;
+            }
+            
+            try {
+                updateStatus('正在保存监控设置...', 'warning');
+                
+                const result = await apiCall('/api/monitoring_settings', {
+                    method: 'POST',
+                    body: JSON.stringify({ monitoring_interval: selectedIntervalValue })
+                });
+                
+                updateStatus(result.message, 'success');
+                
+                // 重新加载设置
+                setTimeout(() => {
+                    loadMonitoringSettings();
+                }, 1000);
+                
+            } catch (error) {
+                console.error('保存监控设置失败:', error);
+                updateStatus('保存失败: ' + error.message, 'error');
+            }
+        }
+
+        function resetToDefault() {
+            selectedIntervalValue = 1800; // 30分钟
+            selectInterval(1800);
+        }
+
+        async function updateMonitoringStats() {
+            try {
+                const analytics = await apiCall('/api/analytics');
+                
+                document.getElementById('active-monitoring').textContent = analytics.monitoring_researchers || '0';
+                
+                // 计算下次检查时间（这里是估算，实际时间可能有差异）
+                const nextCheck = new Date(Date.now() + (analytics.monitoring_interval || 1800) * 1000);
+                document.getElementById('next-check').textContent = nextCheck.toLocaleTimeString();
+                
+            } catch (error) {
+                console.error('更新监控统计失败:', error);
+            }
         }
 
         function renderTopResearchers() {
@@ -1579,9 +1796,15 @@
             
             const grid = document.getElementById('researchers-grid');
             if (grid) {
-                grid.innerHTML = filteredResearchers.map(researcher => 
-                    renderResearcherCards().find(card => card.includes(`data-id="${researcher.id}"`))
-                ).join('') || '<p style="text-align: center; color: rgba(255,255,255,0.7); grid-column: 1/-1;">没有找到匹配的研究者</p>';
+                if (filteredResearchers.length === 0) {
+                    grid.innerHTML = '<p style="text-align: center; color: rgba(255,255,255,0.7); grid-column: 1/-1;">没有找到匹配的研究者</p>';
+                } else {
+                    grid.innerHTML = filteredResearchers.map(researcher => 
+                        renderResearcherCards().split('data-id="' + researcher.id + '"')[0] + 
+                        'data-id="' + researcher.id + '"' + 
+                        renderResearcherCards().split('data-id="' + researcher.id + '"')[1]
+                    ).join('');
+                }
             }
         }
 
@@ -1594,9 +1817,15 @@
             
             const grid = document.getElementById('content-grid');
             if (grid) {
-                grid.innerHTML = filteredContent.map(item => renderContentCards().find(card => 
-                    card.includes(item.author_name)
-                )).join('') || '<p style="text-align: center; color: rgba(255,255,255,0.7); grid-column: 1/-1;">没有找到匹配的内容</p>';
+                if (filteredContent.length === 0) {
+                    grid.innerHTML = '<p style="text-align: center; color: rgba(255,255,255,0.7); grid-column: 1/-1;">没有找到匹配的内容</p>';
+                } else {
+                    // 重新渲染内容卡片
+                    const originalContent = content;
+                    content = filteredContent;
+                    grid.innerHTML = renderContentCards();
+                    content = originalContent;
+                }
             }
         }
 
@@ -1709,6 +1938,8 @@
                 const isMonitoring = card.querySelector('.action-btn.monitoring');
                 if (monitoringOnly && !isMonitoring) {
                     card.style.display = 'none';
+                } else if (!monitoringOnly) {
+                    card.style.display = 'block';
                 } else {
                     card.style.display = 'block';
                 }
@@ -1860,22 +2091,26 @@
                 
                 if (response.ok) {
                     let message = result.message;
-                    if (result.details) {
-                        const details = result.details;
-                        message += `\n\n详细信息：\n• 新增：${details.added} 位\n• 重复跳过：${details.duplicates} 位\n• 错误：${details.errors} 位\n• 总行数：${details.total_rows} 行`;
+                    if (result.imported !== undefined) {
+                        message += `\n\n详细信息：\n• 成功导入：${result.imported} 位\n• 跳过：${result.skipped || 0} 位\n• 错误：${result.errors || 0} 位\n• 总行数：${result.total_rows} 行`;
                     }
                     
                     alert(message);
-                    updateStatus(`上传成功！新增 ${result.details?.added || 0} 位研究者`, 'success');
+                    updateStatus(`上传成功！新增 ${result.imported || 0} 位研究者`, 'success');
                     hideUploadModal();
-                    await loadResearchers(); // 重新加载研究者数据
+                    
+                    // 重新加载数据
+                    await loadAnalytics();
+                    await loadResearchers();
                     renderCurrentView();
                 } else {
                     updateStatus(`上传失败：${result.error}`, 'error');
+                    alert(`上传失败：${result.error}`);
                 }
             } catch (error) {
                 console.error('文件上传错误:', error);
                 updateStatus('上传失败，请检查网络连接', 'error');
+                alert('上传失败，请检查网络连接');
             }
         }
 
