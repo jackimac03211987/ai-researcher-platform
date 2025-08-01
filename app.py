@@ -88,10 +88,9 @@ class TwitterAPI:
             logger.error(f"API连接测试失败: {e}")
         return False
     
-    def get_user_tweets(self, username, max_results=10):
+    def get_user_tweets(self, username, max_results=10, start_time=None, end_time=None):
         """
-        获取用户自2025年1月1日以来的推文。
-        如果获取失败或没有新推文，则返回空列表。
+        获取用户推文，支持自定义时间范围
         """
         if not self.client:
             logger.warning(f"Twitter客户端未配置，无法获取 {username} 的推文")
@@ -109,24 +108,52 @@ class TwitterAPI:
             
             user_id = user_response.data.id
             
-            # 设置起始时间为2025年1月1日
-            start_date = datetime(2025, 1, 1, tzinfo=timezone.utc)
+            # 设置时间范围
+            if not start_time:
+                start_time = datetime(2025, 1, 1, tzinfo=timezone.utc)
+            if not end_time:
+                end_time = datetime.now(timezone.utc)
             
             # 获取推文
             tweets_response = self.client.get_users_tweets(
                 id=user_id,
                 max_results=min(max_results, 100),
-                tweet_fields=['created_at', 'public_metrics', 'context_annotations'],
+                tweet_fields=['created_at', 'public_metrics', 'context_annotations', 'attachments'],
+                media_fields=['url', 'preview_image_url'],
+                expansions=['attachments.media_keys'],
                 exclude=['retweets', 'replies'],
-                start_time=start_date
+                start_time=start_time,
+                end_time=end_time
             )
             
             if not tweets_response.data:
-                logger.info(f"✅ 未找到 {username} 自 {start_date.date()} 以来的新推文")
+                logger.info(f"✅ 未找到 {username} 在指定时间范围内的推文")
                 return []
+            
+            # 处理媒体信息
+            media_dict = {}
+            if tweets_response.includes and 'media' in tweets_response.includes:
+                for media in tweets_response.includes['media']:
+                    media_dict[media.media_key] = {
+                        'type': media.type,
+                        'url': getattr(media, 'url', ''),
+                        'preview_url': getattr(media, 'preview_image_url', '')
+                    }
             
             result = []
             for tweet in tweets_response.data:
+                # 处理媒体附件
+                media_urls = []
+                if hasattr(tweet, 'attachments') and tweet.attachments and 'media_keys' in tweet.attachments:
+                    for media_key in tweet.attachments['media_keys']:
+                        if media_key in media_dict:
+                            media_info = media_dict[media_key]
+                            media_urls.append({
+                                'type': media_info['type'],
+                                'url': media_info['url'],
+                                'preview_url': media_info['preview_url']
+                            })
+                
                 result.append({
                     'id': str(tweet.id),
                     'content': tweet.text,
@@ -135,15 +162,16 @@ class TwitterAPI:
                     'retweets': tweet.public_metrics.get('retweet_count', 0),
                     'replies': tweet.public_metrics.get('reply_count', 0),
                     'author': username,
-                    'type': 'text'
+                    'type': 'text',
+                    'media_urls': media_urls
                 })
             
-            logger.info(f"✅ 成功获取 {username} 的 {len(result)} 条新推文")
+            logger.info(f"✅ 成功获取 {username} 的 {len(result)} 条推文")
             return result
             
         except Exception as e:
             logger.error(f"获取 {username} 推文时发生错误: {e}")
-            return [] # 发生任何错误时，返回空列表
+            return []
 
 class ResearcherManager:
     def __init__(self):
@@ -173,6 +201,7 @@ class ResearcherManager:
                 following_count TEXT DEFAULT '0',
                 avatar_url TEXT DEFAULT '',
                 is_monitoring BOOLEAN DEFAULT 0,
+                is_special_focus BOOLEAN DEFAULT 0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
@@ -183,6 +212,7 @@ class ResearcherManager:
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_researchers_rank ON researchers(rank);')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_researchers_name ON researchers(name);')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_researchers_monitoring ON researchers(is_monitoring);')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_researchers_special ON researchers(is_special_focus);')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_researchers_account ON researchers(x_account);')
         except Exception as e:
             logger.warning(f"创建索引时遇到警告: {e}")
@@ -200,6 +230,8 @@ class ResearcherManager:
                 replies_count INTEGER DEFAULT 0,
                 created_at DATETIME,
                 collected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                is_historical BOOLEAN DEFAULT 0,
+                media_urls TEXT,
                 FOREIGN KEY (researcher_id) REFERENCES researchers (id) ON DELETE CASCADE
             )
         ''')
@@ -497,7 +529,7 @@ def get_researchers():
                 'id': row[0], 'rank': row[1], 'name': row[2], 'country': row[3],
                 'company': row[4], 'research_focus': row[5], 'x_account': row[6],
                 'followers_count': row[7], 'following_count': row[8],
-                'is_monitoring': bool(row[10])
+                'is_monitoring': bool(row[10]), 'is_special_focus': bool(row[11])
             })
         
         conn.close()
@@ -535,7 +567,7 @@ def get_researcher_detail(researcher_id):
         'country': researcher_row[3], 'company': researcher_row[4], 
         'research_focus': researcher_row[5], 'x_account': researcher_row[6],
         'followers_count': researcher_row[7], 'following_count': researcher_row[8],
-        'is_monitoring': bool(researcher_row[10])
+        'is_monitoring': bool(researcher_row[10]), 'is_special_focus': bool(researcher_row[11])
     }
     
     # 获取最新内容
@@ -1045,6 +1077,329 @@ def upload_excel():
             'error': f'文件处理失败: {str(e)}',
             'suggestion': '请检查文件格式，确保包含必要的列：排名、姓名、国家、公司、研究领域、X账号'
         }), 500
+
+@app.route('/api/special_focus', methods=['POST'])
+def set_special_focus():
+    """设置特别关注"""
+    try:
+        data = request.get_json()
+        researcher_ids = data.get('researcher_ids', [])
+        is_special = data.get('is_special', True)
+        
+        if not researcher_ids:
+            return jsonify({'error': 'No researchers selected'}), 400
+        
+        conn = sqlite3.connect('research_platform.db')
+        cursor = conn.cursor()
+        
+        success_count = 0
+        for researcher_id in researcher_ids:
+            cursor.execute('''
+                UPDATE researchers 
+                SET is_special_focus = ?, updated_at = CURRENT_TIMESTAMP 
+                WHERE id = ?
+            ''', (is_special, researcher_id))
+            success_count += 1
+        
+        conn.commit()
+        conn.close()
+        
+        action = "设为特别关注" if is_special else "取消特别关注"
+        return jsonify({
+            'message': f'成功{action} {success_count} 位研究者',
+            'success_count': success_count
+        })
+        
+    except Exception as e:
+        logger.error(f"设置特别关注失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/special_focus')
+def get_special_focus():
+    """获取特别关注的研究者列表"""
+    try:
+        conn = sqlite3.connect('research_platform.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT * FROM researchers 
+            WHERE is_special_focus = 1 
+            ORDER BY name
+        ''')
+        
+        researchers = []
+        for row in cursor.fetchall():
+            researchers.append({
+                'id': row[0], 'rank': row[1], 'name': row[2], 'country': row[3],
+                'company': row[4], 'research_focus': row[5], 'x_account': row[6],
+                'followers_count': row[7], 'following_count': row[8],
+                'is_monitoring': bool(row[10]), 'is_special_focus': bool(row[11])
+            })
+        
+        conn.close()
+        return jsonify(researchers)
+        
+    except Exception as e:
+        logger.error(f"获取特别关注列表失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/fetch_historical/<int:researcher_id>', methods=['POST'])
+def fetch_historical_content(researcher_id):
+    """抓取研究者的历史内容"""
+    try:
+        data = request.get_json()
+        start_date = data.get('start_date')  # 格式: "2024-01-01"
+        end_date = data.get('end_date', datetime.now().strftime('%Y-%m-%d'))
+        max_results = data.get('max_results', 100)
+        
+        conn = sqlite3.connect('research_platform.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT name, x_account FROM researchers WHERE id = ?', (researcher_id,))
+        researcher = cursor.fetchone()
+        
+        if not researcher:
+            conn.close()
+            return jsonify({'error': 'Researcher not found'}), 404
+        
+        name, x_account = researcher
+        
+        # 转换日期格式
+        start_time = datetime.strptime(start_date, '%Y-%m-%d').replace(tzinfo=timezone.utc) if start_date else None
+        end_time = datetime.strptime(end_date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+        
+        # 获取历史推文
+        tweets = twitter_api.get_user_tweets(
+            x_account, 
+            max_results=max_results,
+            start_time=start_time,
+            end_time=end_time
+        ) if twitter_api else []
+        
+        new_content_count = 0
+        if tweets:
+            for tweet in tweets:
+                # 存储媒体URL为JSON字符串
+                media_urls_json = json.dumps(tweet.get('media_urls', []))
+                
+                cursor.execute('''
+                    INSERT OR IGNORE INTO x_content 
+                    (researcher_id, tweet_id, content, likes_count, retweets_count, 
+                     replies_count, created_at, is_historical, media_urls)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
+                ''', (
+                    researcher_id, tweet['id'], tweet['content'],
+                    tweet['likes'], tweet['retweets'], tweet['replies'],
+                    tweet['created_at'], media_urls_json
+                ))
+                
+                if cursor.rowcount > 0:
+                    new_content_count += 1
+            
+            conn.commit()
+        
+        conn.close()
+        
+        period = f"{start_date} 到 {end_date}" if start_date else f"所有时间到 {end_date}"
+        message = f'成功抓取 {name} 在 {period} 期间的历史内容'
+        
+        return jsonify({
+            'message': message,
+            'new_content_count': new_content_count,
+            'total_fetched': len(tweets),
+            'period': period
+        })
+        
+    except Exception as e:
+        logger.error(f"抓取历史内容失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/historical_content/<int:researcher_id>')
+def get_historical_content(researcher_id):
+    """获取研究者的历史内容"""
+    try:
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 50, type=int)
+        per_page = min(per_page, 200)
+        offset = (page - 1) * per_page
+        
+        conn = sqlite3.connect('research_platform.db')
+        cursor = conn.cursor()
+        
+        # 获取研究者信息
+        cursor.execute('SELECT * FROM researchers WHERE id = ?', (researcher_id,))
+        researcher_row = cursor.fetchone()
+        
+        if not researcher_row:
+            conn.close()
+            return jsonify({'error': 'Researcher not found'}), 404
+        
+        researcher = {
+            'id': researcher_row[0], 'name': researcher_row[2],
+            'x_account': researcher_row[6], 'is_special_focus': bool(researcher_row[11])
+        }
+        
+        # 获取总数
+        cursor.execute('SELECT COUNT(*) FROM x_content WHERE researcher_id = ?', (researcher_id,))
+        total_count = cursor.fetchone()[0]
+        
+        # 获取内容
+        cursor.execute('''
+            SELECT id, content, likes_count, retweets_count, replies_count, 
+                   created_at, collected_at, is_historical, media_urls
+            FROM x_content 
+            WHERE researcher_id = ? 
+            ORDER BY created_at DESC 
+            LIMIT ? OFFSET ?
+        ''', (researcher_id, per_page, offset))
+        
+        content_list = []
+        for row in cursor.fetchall():
+            media_urls = []
+            try:
+                if row[8]:  # media_urls
+                    media_urls = json.loads(row[8])
+            except:
+                pass
+                
+            content_list.append({
+                'id': row[0],
+                'content': row[1],
+                'likes_count': row[2],
+                'retweets_count': row[3],
+                'replies_count': row[4],
+                'created_at': row[5],
+                'collected_at': row[6],
+                'is_historical': bool(row[7]),
+                'media_urls': media_urls
+            })
+        
+        conn.close()
+        
+        return jsonify({
+            'researcher': researcher,
+            'content': content_list,
+            'pagination': {
+                'page': page,
+                'per_page': per_page,
+                'total': total_count,
+                'pages': (total_count + per_page - 1) // per_page
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"获取历史内容失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/export_word/<int:researcher_id>')
+def export_to_word(researcher_id):
+    """导出研究者内容为Word文档"""
+    try:
+        from docx import Document
+        from docx.shared import Inches
+        import io
+        
+        conn = sqlite3.connect('research_platform.db')
+        cursor = conn.cursor()
+        
+        # 获取研究者信息
+        cursor.execute('SELECT name, x_account, research_focus FROM researchers WHERE id = ?', (researcher_id,))
+        researcher = cursor.fetchone()
+        
+        if not researcher:
+            conn.close()
+            return jsonify({'error': 'Researcher not found'}), 404
+        
+        name, x_account, research_focus = researcher
+        
+        # 获取所有内容
+        cursor.execute('''
+            SELECT content, likes_count, retweets_count, replies_count, 
+                   created_at, media_urls
+            FROM x_content 
+            WHERE researcher_id = ? 
+            ORDER BY created_at DESC
+        ''', (researcher_id,))
+        
+        contents = cursor.fetchall()
+        conn.close()
+        
+        # 创建Word文档
+        doc = Document()
+        
+        # 添加标题
+        title = doc.add_heading(f'{name} 内容记录', 0)
+        
+        # 添加基本信息
+        doc.add_heading('基本信息', level=1)
+        info_table = doc.add_table(rows=3, cols=2)
+        info_table.style = 'Table Grid'
+        
+        info_table.cell(0, 0).text = '姓名'
+        info_table.cell(0, 1).text = name
+        info_table.cell(1, 0).text = 'X账号'
+        info_table.cell(1, 1).text = x_account
+        info_table.cell(2, 0).text = '研究领域'
+        info_table.cell(2, 1).text = research_focus or '未知'
+        
+        # 添加内容
+        doc.add_heading('内容记录', level=1)
+        doc.add_paragraph(f'共收集 {len(contents)} 条内容，按时间倒序排列：')
+        
+        for i, content in enumerate(contents, 1):
+            text, likes, retweets, replies, created_at, media_urls = content
+            
+            # 添加序号和时间
+            heading = doc.add_heading(f'{i}. {created_at[:19] if created_at else "未知时间"}', level=2)
+            
+            # 添加内容
+            doc.add_paragraph(text or '无文字内容')
+            
+            # 添加媒体信息
+            if media_urls:
+                try:
+                    media_list = json.loads(media_urls)
+                    if media_list:
+                        doc.add_paragraph('包含媒体:')
+                        for media in media_list:
+                            media_type = media.get('type', 'unknown')
+                            media_url = media.get('url', media.get('preview_url', ''))
+                            if media_url:
+                                doc.add_paragraph(f'• {media_type}: {media_url}', style='List Bullet')
+                except:
+                    pass
+            
+            # 添加互动数据
+            stats_p = doc.add_paragraph()
+            stats_p.add_run(f'👍 {likes} 点赞  🔄 {retweets} 转发  💬 {replies} 回复')
+            
+            # 添加分隔线
+            if i < len(contents):
+                doc.add_paragraph('─' * 50)
+        
+        # 保存到内存
+        file_stream = io.BytesIO()
+        doc.save(file_stream)
+        file_stream.seek(0)
+        
+        filename = f"{name}_内容记录_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
+        
+        from flask import send_file
+        return send_file(
+            file_stream,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        )
+        
+    except ImportError:
+        return jsonify({
+            'error': 'Word导出功能需要安装 python-docx 库',
+            'solution': '请运行: pip install python-docx'
+        }), 500
+    except Exception as e:
+        logger.error(f"导出Word失败: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/database_status')
 def get_database_status():
