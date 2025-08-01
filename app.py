@@ -113,12 +113,9 @@ class ResearcherManager:
         conn = sqlite3.connect('research_platform.db')
         cursor = conn.cursor()
         
-        # 开启外键约束和优化设置
+        # 开启外键约束和基本优化设置
         cursor.execute("PRAGMA foreign_keys = ON;")
-        cursor.execute("PRAGMA journal_mode = WAL;")  # 写前日志模式，提高并发性能
         cursor.execute("PRAGMA synchronous = NORMAL;")  # 平衡性能和安全性
-        cursor.execute("PRAGMA cache_size = -64000;")   # 64MB缓存
-        cursor.execute("PRAGMA temp_store = MEMORY;")   # 临时表存储在内存中
 
         # 研究者表 - 优化字段类型和索引
         cursor.execute('''
@@ -140,10 +137,13 @@ class ResearcherManager:
         ''')
         
         # 为高频查询字段创建索引
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_researchers_rank ON researchers(rank);')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_researchers_name ON researchers(name);')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_researchers_monitoring ON researchers(is_monitoring);')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_researchers_account ON researchers(x_account);')
+        try:
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_researchers_rank ON researchers(rank);')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_researchers_name ON researchers(name);')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_researchers_monitoring ON researchers(is_monitoring);')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_researchers_account ON researchers(x_account);')
+        except Exception as e:
+            logger.warning(f"创建索引时遇到警告: {e}")
         
         # 内容表 - 优化存储和索引
         cursor.execute('''
@@ -163,9 +163,12 @@ class ResearcherManager:
         ''')
         
         # 内容表索引
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_content_researcher ON x_content(researcher_id);')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_content_created ON x_content(created_at);')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_content_tweet_id ON x_content(tweet_id);')
+        try:
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_content_researcher ON x_content(researcher_id);')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_content_created ON x_content(created_at);')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_content_tweet_id ON x_content(tweet_id);')
+        except Exception as e:
+            logger.warning(f"创建内容表索引时遇到警告: {e}")
         
         # 监控任务表
         cursor.execute('''
@@ -180,8 +183,11 @@ class ResearcherManager:
         ''')
         
         # 监控任务表索引
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_monitoring_researcher ON monitoring_tasks(researcher_id);')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_monitoring_status ON monitoring_tasks(status);')
+        try:
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_monitoring_researcher ON monitoring_tasks(researcher_id);')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_monitoring_status ON monitoring_tasks(status);')
+        except Exception as e:
+            logger.warning(f"创建监控任务表索引时遇到警告: {e}")
         
         conn.commit()
         conn.close()
@@ -235,8 +241,19 @@ class ResearcherManager:
         conn.close()
 
 # 初始化
-researcher_manager = ResearcherManager()
-twitter_api = TwitterAPI()
+try:
+    researcher_manager = ResearcherManager()
+    logger.info("✅ 研究者管理器初始化成功")
+except Exception as e:
+    logger.error(f"❌ 研究者管理器初始化失败: {e}")
+    researcher_manager = None
+
+try:
+    twitter_api = TwitterAPI()
+    logger.info("✅ Twitter API初始化完成")
+except Exception as e:
+    logger.error(f"❌ Twitter API初始化失败: {e}")
+    twitter_api = None
 
 # 监控任务 - 优化支持大规模监控
 class MonitoringService:
@@ -324,7 +341,12 @@ class MonitoringService:
                 time.sleep(1)  # 出错时稍作等待
 
 # 初始化监控服务
-monitoring_service = MonitoringService()
+try:
+    monitoring_service = MonitoringService()
+    logger.info("✅ 监控服务初始化成功")
+except Exception as e:
+    logger.error(f"❌ 监控服务初始化失败: {e}")
+    monitoring_service = None
 
 # API路由
 @app.route('/')
@@ -334,6 +356,9 @@ def index():
 @app.route('/api/researchers')
 def get_researchers():
     """获取研究者列表 - 支持分页处理大量数据"""
+    if not researcher_manager:
+        return jsonify({'error': 'System not properly initialized'}), 500
+        
     conn = sqlite3.connect('research_platform.db')
     cursor = conn.cursor()
     
@@ -777,7 +802,7 @@ def upload_excel():
                 
                 # 达到批量大小时执行插入
                 if len(batch_data) >= batch_size:
-                    added_count += self._insert_researcher_batch(cursor, batch_data, error_details)
+                    added_count += insert_researcher_batch(cursor, batch_data, error_details)
                     batch_data = []
                 
             except Exception as e:
@@ -792,7 +817,7 @@ def upload_excel():
         
         # 处理剩余的批量数据
         if batch_data:
-            added_count += self._insert_researcher_batch(cursor, batch_data, error_details)
+            added_count += insert_researcher_batch(cursor, batch_data, error_details)
         
         # 提交事务
         cursor.execute('COMMIT')
@@ -822,7 +847,7 @@ def upload_excel():
             'suggestion': '请检查文件格式，确保包含必要的列：排名、姓名、国家、公司、研究领域、X账号'
         }), 500
 
-def _insert_researcher_batch(self, cursor, batch_data, error_details):
+def insert_researcher_batch(cursor, batch_data, error_details):
     """批量插入研究者数据"""
     added_count = 0
     
@@ -841,9 +866,6 @@ def _insert_researcher_batch(self, cursor, batch_data, error_details):
             logger.error(error_msg)
     
     return added_count
-
-# 给app对象添加方法
-app._insert_researcher_batch = _insert_researcher_batch
 
 @app.route('/api/system_status')
 def get_system_status():
@@ -896,11 +918,29 @@ def get_system_status():
 def health_check():
     """健康检查"""
     return jsonify({
-        'status': 'healthy',
+        'status': 'healthy' if researcher_manager else 'partial',
         'timestamp': datetime.now().isoformat(),
-        'twitter_api': 'connected' if twitter_api.client else 'disconnected',
-        'monitoring': 'active' if monitoring_service.running else 'inactive',
-        'capacity': '5000 researchers supported'
+        'twitter_api': 'connected' if twitter_api and twitter_api.client else 'disconnected',
+        'monitoring': 'active' if monitoring_service and monitoring_service.running else 'inactive',
+        'capacity': '5000 researchers supported',
+        'components': {
+            'researcher_manager': 'ok' if researcher_manager else 'failed',
+            'twitter_api': 'ok' if twitter_api else 'failed',
+            'monitoring_service': 'ok' if monitoring_service else 'failed'
+        }
+    })
+
+@app.route('/api/init_status')
+def get_init_status():
+    """获取初始化状态"""
+    return jsonify({
+        'initialized': bool(researcher_manager),
+        'components': {
+            'database': bool(researcher_manager),
+            'twitter_api': bool(twitter_api),
+            'monitoring': bool(monitoring_service)
+        },
+        'ready': bool(researcher_manager and twitter_api and monitoring_service)
     })
 
 if __name__ == '__main__':
