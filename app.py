@@ -70,10 +70,9 @@ class TwitterAPI:
             try:
                 self.client = tweepy.Client(
                     bearer_token=TWITTER_BEARER_TOKEN,
-                    wait_on_rate_limit=True
+                    wait_on_rate_limit=False
                 )
                 logger.info("✅ Twitter API客户端初始化成功")
-                self.test_connection()
             except Exception as e:
                 logger.error(f"❌ Twitter API初始化失败: {e}")
                 self.client = None
@@ -1399,65 +1398,65 @@ def fetch_historical_content(researcher_id):
         start_date = data.get('start_date')  # 格式: "2024-01-01"
         end_date = data.get('end_date', datetime.now().strftime('%Y-%m-%d'))
         max_results = data.get('max_results', 50)  # 降低默认数量避免API限制
-        
+
         conn = sqlite3.connect('research_platform.db')
         cursor = conn.cursor()
-        
+
         cursor.execute('SELECT name, x_account FROM researchers WHERE id = ?', (researcher_id,))
         researcher = cursor.fetchone()
-        
+
         if not researcher:
             conn.close()
             return jsonify({'error': 'Researcher not found'}), 404
-        
+
         name, x_account = researcher
-        
+
         # 修复时间范围转换
         if start_date:
             start_time = datetime.strptime(start_date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
         else:
             # 如果没有指定开始时间，默认获取最近30天
             start_time = datetime.now(timezone.utc) - timedelta(days=30)
-            
+
         end_time = datetime.strptime(end_date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
-        
+
         logger.info(f"🔍 开始抓取 {name} 的历史内容")
         logger.info(f"📅 时间范围: {start_time.strftime('%Y-%m-%d')} 到 {end_time.strftime('%Y-%m-%d')}")
         logger.info(f"📊 最大结果数: {max_results}")
-        
+
         # 获取历史推文
         tweets = twitter_api.get_user_tweets(
-            x_account, 
+            x_account,
             max_results=max_results,
             start_time=start_time,
             end_time=end_time
         ) if twitter_api else []
-        
+
         logger.info(f"📥 API返回 {len(tweets)} 条推文")
-        
+
         new_content_count = 0
         duplicate_count = 0
         error_count = 0
-        
+
         if tweets:
             for i, tweet in enumerate(tweets):
                 try:
                     # 存储媒体URL为JSON字符串
                     media_urls_json = json.dumps(tweet.get('media_urls', []))
-                    
+
                     # 先检查是否已存在
                     cursor.execute('SELECT id FROM x_content WHERE tweet_id = ?', (tweet['id'],))
                     existing = cursor.fetchone()
-                    
+
                     if existing:
                         duplicate_count += 1
                         logger.debug(f"  ⚠️ 推文 {tweet['id']} 已存在，跳过")
                         continue
-                    
+
                     # 插入新记录
                     cursor.execute('''
-                        INSERT INTO x_content 
-                        (researcher_id, tweet_id, content, likes_count, retweets_count, 
+                        INSERT INTO x_content
+                        (researcher_id, tweet_id, content, likes_count, retweets_count,
                          replies_count, created_at, is_historical, media_urls)
                         VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
                     ''', (
@@ -1465,20 +1464,20 @@ def fetch_historical_content(researcher_id):
                         tweet['likes'], tweet['retweets'], tweet['replies'],
                         tweet['created_at'], media_urls_json
                     ))
-                    
+
                     new_content_count += 1
                     logger.debug(f"  ✅ 插入推文 {i+1}: {tweet['created_at']} - {tweet['content'][:50]}...")
-                    
+
                 except Exception as e:
                     error_count += 1
                     logger.error(f"❌ 插入推文 {i+1} 失败: {e}")
-            
+
             conn.commit()
-        
+
         conn.close()
-        
+
         period = f"{start_date or '30天前'} 到 {end_date}"
-        
+
         # 详细的结果消息
         result_message = f'抓取 {name} 完成'
         if tweets:
@@ -1489,9 +1488,9 @@ def fetch_historical_content(researcher_id):
                 result_message += f'，错误{error_count}条'
         else:
             result_message += ': 未获取到任何推文'
-        
+
         logger.info(f"✅ {result_message}")
-        
+
         return jsonify({
             'message': result_message,
             'new_content_count': new_content_count,
@@ -1507,7 +1506,7 @@ def fetch_historical_content(researcher_id):
                 'api_working': twitter_api and hasattr(twitter_api, 'api_working') and twitter_api.api_working
             }
         })
-        
+
     except Exception as e:
         logger.error(f"抓取历史内容失败: {e}")
         return jsonify({
