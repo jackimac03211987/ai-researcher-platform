@@ -88,6 +88,41 @@ class TwitterAPI:
             logger.error(f"API连接测试失败: {e}")
         return False
     
+    def get_user_info(self, username):
+        """获取用户基本信息，包括关注者数量"""
+        if not self.client:
+            logger.warning(f"Twitter客户端未配置，无法获取 {username} 的用户信息")
+            return None
+        
+        try:
+            # 移除@符号
+            username = username.replace('@', '')
+            
+            # 获取用户信息
+            user_response = self.client.get_user(
+                username=username,
+                user_fields=['public_metrics', 'profile_image_url']
+            )
+            
+            if not user_response.data:
+                logger.warning(f"Twitter用户 {username} 不存在")
+                return None
+            
+            user = user_response.data
+            return {
+                'id': str(user.id),
+                'username': user.username,
+                'name': user.name,
+                'followers_count': user.public_metrics.get('followers_count', 0),
+                'following_count': user.public_metrics.get('following_count', 0),
+                'tweet_count': user.public_metrics.get('tweet_count', 0),
+                'profile_image_url': getattr(user, 'profile_image_url', '')
+            }
+            
+        except Exception as e:
+            logger.error(f"获取 {username} 用户信息时发生错误: {e}")
+            return None
+
     def get_user_tweets(self, username, max_results=10, start_time=None, end_time=None):
         """
         获取用户推文，支持自定义时间范围
@@ -1122,7 +1157,9 @@ def get_special_focus():
         cursor = conn.cursor()
         
         cursor.execute('''
-            SELECT * FROM researchers 
+            SELECT id, rank, name, country, company, research_focus, x_account, 
+                   followers_count, following_count, avatar_url, is_monitoring, is_special_focus
+            FROM researchers 
             WHERE is_special_focus = 1 
             ORDER BY name
         ''')
@@ -1133,14 +1170,113 @@ def get_special_focus():
                 'id': row[0], 'rank': row[1], 'name': row[2], 'country': row[3],
                 'company': row[4], 'research_focus': row[5], 'x_account': row[6],
                 'followers_count': row[7], 'following_count': row[8],
-                'is_monitoring': bool(row[10]), 'is_special_focus': bool(row[11])
+                'avatar_url': row[9], 'is_monitoring': bool(row[10]), 
+                'is_special_focus': bool(row[11])
             })
         
         conn.close()
+        logger.info(f"获取特别关注列表成功，共 {len(researchers)} 位")
         return jsonify(researchers)
         
     except Exception as e:
         logger.error(f"获取特别关注列表失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/update_user_info/<int:researcher_id>', methods=['POST'])
+def update_user_info(researcher_id):
+    """更新研究者的用户信息（关注者等数据）"""
+    try:
+        conn = sqlite3.connect('research_platform.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT name, x_account FROM researchers WHERE id = ?', (researcher_id,))
+        researcher = cursor.fetchone()
+        
+        if not researcher:
+            conn.close()
+            return jsonify({'error': 'Researcher not found'}), 404
+        
+        name, x_account = researcher
+        
+        # 获取用户信息
+        user_info = twitter_api.get_user_info(x_account) if twitter_api else None
+        
+        if user_info:
+            # 更新数据库中的用户信息
+            cursor.execute('''
+                UPDATE researchers 
+                SET followers_count = ?, following_count = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (str(user_info['followers_count']), str(user_info['following_count']), researcher_id))
+            
+            conn.commit()
+            conn.close()
+            
+            return jsonify({
+                'message': f'成功更新 {name} 的用户信息',
+                'user_info': user_info
+            })
+        else:
+            conn.close()
+            return jsonify({
+                'message': f'无法获取 {name} 的用户信息（可能是API限制或网络问题）',
+                'user_info': None
+            })
+        
+    except Exception as e:
+        logger.error(f"更新用户信息失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/update_all_user_info', methods=['POST'])
+def update_all_user_info():
+    """批量更新所有研究者的用户信息"""
+    try:
+        conn = sqlite3.connect('research_platform.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT id, name, x_account FROM researchers ORDER BY id')
+        researchers = cursor.fetchall()
+        
+        updated_count = 0
+        failed_count = 0
+        
+        for researcher_id, name, x_account in researchers:
+            try:
+                # 获取用户信息
+                user_info = twitter_api.get_user_info(x_account) if twitter_api else None
+                
+                if user_info:
+                    # 更新数据库
+                    cursor.execute('''
+                        UPDATE researchers 
+                        SET followers_count = ?, following_count = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    ''', (str(user_info['followers_count']), str(user_info['following_count']), researcher_id))
+                    
+                    updated_count += 1
+                    logger.info(f"✅ 更新 {name}: {user_info['followers_count']} 关注者, {user_info['following_count']} 正在关注")
+                else:
+                    failed_count += 1
+                    logger.warning(f"⚠️ 无法获取 {name} 的用户信息")
+                
+                # 添加延迟，避免API限制
+                time.sleep(1)
+                
+            except Exception as e:
+                failed_count += 1
+                logger.error(f"❌ 更新 {name} 失败: {e}")
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'message': f'批量更新完成: 成功 {updated_count} 个，失败 {failed_count} 个',
+            'updated_count': updated_count,
+            'failed_count': failed_count
+        })
+        
+    except Exception as e:
+        logger.error(f"批量更新用户信息失败: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/fetch_historical/<int:researcher_id>', methods=['POST'])
