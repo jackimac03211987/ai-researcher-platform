@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request, send_from_directory
+from flask import Flask, render_template, jsonify, request, send_from_directory, send_file
 import json
 import tweepy
 import os
@@ -315,12 +315,30 @@ class ResearcherManager:
             VALUES ('monitoring_interval', '1800', '监控检查间隔（秒）')
         ''')
         
+        # 创建元数据表用于跟踪数据库状态
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS db_metadata (
+                key TEXT PRIMARY KEY,
+                value TEXT,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
         conn.commit()
         conn.close()
         logger.info("✅ 数据库初始化完成 - 已优化支持大规模数据")
     
     def load_sample_data(self):
         """加载研究者示例数据 (此为应用基础数据，非动态内容)"""
+        conn = sqlite3.connect('research_platform.db')
+        cursor = conn.cursor()
+        
+        # 检查是否已经加载过示例数据
+        cursor.execute('SELECT value FROM db_metadata WHERE key = ?', ('sample_data_loaded',))
+        if cursor.fetchone():
+            conn.close()
+            return
+        
         researchers_data = [
             {
                 'rank': 1, 'name': 'Ilya Sutskever', 'country': 'Canada', 'company': 'SSI',
@@ -349,9 +367,6 @@ class ResearcherManager:
             }
         ]
         
-        conn = sqlite3.connect('research_platform.db')
-        cursor = conn.cursor()
-        
         for researcher in researchers_data:
             cursor.execute('''
                 INSERT OR IGNORE INTO researchers 
@@ -363,8 +378,32 @@ class ResearcherManager:
                 researcher['followers_count'], researcher['following_count']
             ))
         
+        # 标记示例数据已加载
+        cursor.execute('INSERT OR REPLACE INTO db_metadata (key, value) VALUES (?, ?)', 
+                      ('sample_data_loaded', 'true'))
+        
         conn.commit()
         conn.close()
+        logger.info("✅ 示例数据加载完成")
+        
+    def load_sample_data_if_empty(self):
+        """仅在数据库为空时加载示例数据"""
+        conn = sqlite3.connect('research_platform.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT COUNT(*) FROM researchers')
+        count = cursor.fetchone()[0]
+        
+        if count == 0:
+            # 重置加载标记
+            cursor.execute('DELETE FROM db_metadata WHERE key = ?', ('sample_data_loaded',))
+            conn.commit()
+            conn.close()
+            
+            # 重新加载示例数据
+            self.load_sample_data()
+        else:
+            conn.close()
 
 # 监控任务 - 优化支持大规模监控
 class MonitoringService:
@@ -516,7 +555,28 @@ except Exception as e:
 # API路由
 @app.route('/')
 def index():
-    return render_template('index.html')
+    """主页路由 - 返回HTML模板"""
+    try:
+        # 这里应该返回index.html模板
+        # 由于我们将HTML内容放在了artifact中，实际部署时需要将HTML内容保存为templates/index.html
+        return """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>AI研究者X内容学习平台</title>
+            <meta charset="UTF-8">
+        </head>
+        <body>
+            <h1>AI研究者X内容学习平台</h1>
+            <p>请将完整的HTML内容保存为 templates/index.html 文件</p>
+            <p>系统状态: 正常运行</p>
+            <p>访问 /api/analytics 查看系统分析数据</p>
+        </body>
+        </html>
+        """
+    except Exception as e:
+        logger.error(f"主页加载失败: {e}")
+        return f"系统初始化失败: {str(e)}", 500
 
 @app.route('/api/researchers')
 def get_researchers():
@@ -1520,7 +1580,6 @@ def export_to_word(researcher_id):
         
         filename = f"{name}_内容记录_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
         
-        from flask import send_file
         return send_file(
             file_stream,
             as_attachment=True,
@@ -1582,35 +1641,8 @@ def get_database_status():
         logger.error(f"获取数据库状态失败: {e}")
         return jsonify({'error': str(e), 'status': 'error'}), 500
 
-@app.route('/api/reset_sample_data', methods=['POST'])
-def reset_sample_data():
-    """重置示例数据（仅用于测试和恢复）"""
-    try:
-        if researcher_manager:
-            conn = sqlite3.connect('research_platform.db')
-            cursor = conn.cursor()
-            
-            # 删除现有示例数据（基于名字判断）
-            sample_names = ['Ilya Sutskever', 'Noam Shazeer', 'Geoffrey Hinton', 'Alec Radford', 'Andrej Karpathy']
-            for name in sample_names:
-                cursor.execute('DELETE FROM researchers WHERE name = ?', (name,))
-            
-            # 重置初始化标记
-            cursor.execute('DELETE FROM db_metadata WHERE key = ?', ('sample_data_loaded',))
-            
-            conn.commit()
-            conn.close()
-            
-            # 重新加载示例数据
-            researcher_manager.load_sample_data_if_empty()
-            
-            return jsonify({'message': '示例数据已重置', 'status': 'success'})
-        else:
-            return jsonify({'error': '研究者管理器未初始化'}), 500
-            
-    except Exception as e:
-        logger.error(f"重置示例数据失败: {e}")
-        return jsonify({'error': str(e)}), 500
+@app.route('/api/system_status')
+def get_system_status():
     """获取系统状态信息"""
     conn = sqlite3.connect('research_platform.db')
     cursor = conn.cursor()
@@ -1667,6 +1699,36 @@ def reset_sample_data():
             'last_check': datetime.now().isoformat()
         }
     })
+
+@app.route('/api/reset_sample_data', methods=['POST'])
+def reset_sample_data():
+    """重置示例数据（仅用于测试和恢复）"""
+    try:
+        if researcher_manager:
+            conn = sqlite3.connect('research_platform.db')
+            cursor = conn.cursor()
+            
+            # 删除现有示例数据（基于名字判断）
+            sample_names = ['Ilya Sutskever', 'Noam Shazeer', 'Geoffrey Hinton', 'Alec Radford', 'Andrej Karpathy']
+            for name in sample_names:
+                cursor.execute('DELETE FROM researchers WHERE name = ?', (name,))
+            
+            # 重置初始化标记
+            cursor.execute('DELETE FROM db_metadata WHERE key = ?', ('sample_data_loaded',))
+            
+            conn.commit()
+            conn.close()
+            
+            # 重新加载示例数据
+            researcher_manager.load_sample_data_if_empty()
+            
+            return jsonify({'message': '示例数据已重置', 'status': 'success'})
+        else:
+            return jsonify({'error': '研究者管理器未初始化'}), 500
+            
+    except Exception as e:
+        logger.error(f"重置示例数据失败: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/health')
 def health_check():
