@@ -19,6 +19,45 @@ logger = logging.getLogger(__name__)
 # Twitter API配置
 TWITTER_BEARER_TOKEN = os.environ.get('TWITTER_BEARER_TOKEN')
 
+def format_interval(seconds):
+    """将秒数格式化为人性化的时间显示"""
+    if seconds < 3600:
+        return f"{seconds // 60}分钟"
+    elif seconds < 86400:
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        if minutes == 0:
+            return f"{hours}小时"
+        else:
+            return f"{hours}小时{minutes}分钟"
+    else:
+        days = seconds // 86400
+        hours = (seconds % 86400) // 3600
+        if hours == 0:
+            return f"{days}天"
+        else:
+            return f"{days}天{hours}小时"
+
+def insert_researcher_batch(cursor, batch_data, error_details):
+    """批量插入研究者数据"""
+    added_count = 0
+    
+    for data in batch_data:
+        try:
+            cursor.execute('''
+                INSERT OR REPLACE INTO researchers 
+                (rank, name, country, company, research_focus, x_account)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', data)
+            added_count += 1
+            
+        except Exception as e:
+            error_msg = f"插入数据失败 {data[1]}: {str(e)}"
+            error_details.append(error_msg)
+            logger.error(error_msg)
+    
+    return added_count
+
 class TwitterAPI:
     def __init__(self):
         if TWITTER_BEARER_TOKEN:
@@ -188,6 +227,23 @@ class ResearcherManager:
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_monitoring_status ON monitoring_tasks(status);')
         except Exception as e:
             logger.warning(f"创建监控任务表索引时遇到警告: {e}")
+
+        # 系统设置表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS system_settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                setting_key TEXT UNIQUE NOT NULL,
+                setting_value TEXT NOT NULL,
+                description TEXT,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # 插入默认监控周期设置（30分钟 = 1800秒）
+        cursor.execute('''
+            INSERT OR IGNORE INTO system_settings (setting_key, setting_value, description)
+            VALUES ('monitoring_interval', '1800', '监控检查间隔（秒）')
+        ''')
         
         conn.commit()
         conn.close()
@@ -240,27 +296,50 @@ class ResearcherManager:
         conn.commit()
         conn.close()
 
-# 初始化
-try:
-    researcher_manager = ResearcherManager()
-    logger.info("✅ 研究者管理器初始化成功")
-except Exception as e:
-    logger.error(f"❌ 研究者管理器初始化失败: {e}")
-    researcher_manager = None
-
-try:
-    twitter_api = TwitterAPI()
-    logger.info("✅ Twitter API初始化完成")
-except Exception as e:
-    logger.error(f"❌ Twitter API初始化失败: {e}")
-    twitter_api = None
-
 # 监控任务 - 优化支持大规模监控
 class MonitoringService:
     def __init__(self):
         self.running = False
         self.thread = None
         self.max_concurrent_checks = 10  # 最大并发检查数
+        self.current_interval = self.get_monitoring_interval()  # 从数据库获取间隔
+    
+    def get_monitoring_interval(self):
+        """从数据库获取监控间隔设置"""
+        try:
+            conn = sqlite3.connect('research_platform.db')
+            cursor = conn.cursor()
+            cursor.execute('SELECT setting_value FROM system_settings WHERE setting_key = ?', ('monitoring_interval',))
+            result = cursor.fetchone()
+            conn.close()
+            
+            if result:
+                return int(result[0])
+            else:
+                return 1800  # 默认30分钟
+        except Exception as e:
+            logger.error(f"获取监控间隔设置失败: {e}")
+            return 1800
+    
+    def update_monitoring_interval(self, interval_seconds):
+        """更新监控间隔设置"""
+        try:
+            conn = sqlite3.connect('research_platform.db')
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE system_settings 
+                SET setting_value = ?, updated_at = CURRENT_TIMESTAMP 
+                WHERE setting_key = ?
+            ''', (str(interval_seconds), 'monitoring_interval'))
+            conn.commit()
+            conn.close()
+            
+            self.current_interval = interval_seconds
+            logger.info(f"✅ 监控间隔已更新为 {interval_seconds} 秒")
+            return True
+        except Exception as e:
+            logger.error(f"更新监控间隔设置失败: {e}")
+            return False
     
     def start_monitoring(self):
         """启动监控服务"""
@@ -268,17 +347,18 @@ class MonitoringService:
             self.running = True
             self.thread = threading.Thread(target=self._monitoring_loop, daemon=True)
             self.thread.start()
-            logger.info("🚀 监控服务已启动 - 支持大规模监控")
+            logger.info(f"🚀 监控服务已启动 - 支持大规模监控，检查间隔: {self.current_interval}秒")
     
     def _monitoring_loop(self):
-        """监控循环 - 优化处理大量研究者"""
+        """监控循环 - 使用可配置的时间间隔"""
         while self.running:
             try:
                 self._check_researchers_batch()
-                time.sleep(1800)  # 每30分钟检查一次
+                # 使用当前设置的间隔时间
+                time.sleep(self.current_interval)
             except Exception as e:
                 logger.error(f"监控循环错误: {e}")
-                time.sleep(60)
+                time.sleep(60)  # 出错时等待1分钟后重试
     
     def _check_researchers_batch(self):
         """批量检查正在监控的研究者"""
@@ -340,6 +420,21 @@ class MonitoringService:
                 logger.error(f"检查 {name} 时出错: {e}")
                 time.sleep(1)  # 出错时稍作等待
 
+# 初始化
+try:
+    researcher_manager = ResearcherManager()
+    logger.info("✅ 研究者管理器初始化成功")
+except Exception as e:
+    logger.error(f"❌ 研究者管理器初始化失败: {e}")
+    researcher_manager = None
+
+try:
+    twitter_api = TwitterAPI()
+    logger.info("✅ Twitter API初始化完成")
+except Exception as e:
+    logger.error(f"❌ Twitter API初始化失败: {e}")
+    twitter_api = None
+
 # 初始化监控服务
 try:
     monitoring_service = MonitoringService()
@@ -364,54 +459,64 @@ def get_researchers():
     
     search_query = request.args.get('search', '')
     page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 50, type=int)  # 默认每页50条
+    per_page = request.args.get('per_page', 50, type=int)
     
     # 限制每页最大数量
     per_page = min(per_page, 200)
     offset = (page - 1) * per_page
     
-    if search_query:
-        # 搜索查询
-        count_query = '''
-            SELECT COUNT(*) FROM researchers 
-            WHERE name LIKE ? OR company LIKE ? OR research_focus LIKE ?
-        '''
-        cursor.execute(count_query, (f'%{search_query}%', f'%{search_query}%', f'%{search_query}%'))
-        total_count = cursor.fetchone()[0]
+    try:
+        if search_query:
+            # 搜索查询
+            count_query = '''
+                SELECT COUNT(*) FROM researchers 
+                WHERE name LIKE ? OR company LIKE ? OR research_focus LIKE ?
+            '''
+            cursor.execute(count_query, (f'%{search_query}%', f'%{search_query}%', f'%{search_query}%'))
+            total_count = cursor.fetchone()[0]
+            
+            data_query = '''
+                SELECT * FROM researchers 
+                WHERE name LIKE ? OR company LIKE ? OR research_focus LIKE ?
+                ORDER BY rank LIMIT ? OFFSET ?
+            '''
+            cursor.execute(data_query, (f'%{search_query}%', f'%{search_query}%', f'%{search_query}%', per_page, offset))
+        else:
+            # 普通查询
+            cursor.execute('SELECT COUNT(*) FROM researchers')
+            total_count = cursor.fetchone()[0]
+            
+            cursor.execute('SELECT * FROM researchers ORDER BY rank LIMIT ? OFFSET ?', (per_page, offset))
         
-        data_query = '''
-            SELECT * FROM researchers 
-            WHERE name LIKE ? OR company LIKE ? OR research_focus LIKE ?
-            ORDER BY rank LIMIT ? OFFSET ?
-        '''
-        cursor.execute(data_query, (f'%{search_query}%', f'%{search_query}%', f'%{search_query}%', per_page, offset))
-    else:
-        # 普通查询
-        cursor.execute('SELECT COUNT(*) FROM researchers')
-        total_count = cursor.fetchone()[0]
+        researchers = []
+        for row in cursor.fetchall():
+            researchers.append({
+                'id': row[0], 'rank': row[1], 'name': row[2], 'country': row[3],
+                'company': row[4], 'research_focus': row[5], 'x_account': row[6],
+                'followers_count': row[7], 'following_count': row[8],
+                'is_monitoring': bool(row[10])
+            })
         
-        cursor.execute('SELECT * FROM researchers ORDER BY rank LIMIT ? OFFSET ?', (per_page, offset))
-    
-    researchers = []
-    for row in cursor.fetchall():
-        researchers.append({
-            'id': row[0], 'rank': row[1], 'name': row[2], 'country': row[3],
-            'company': row[4], 'research_focus': row[5], 'x_account': row[6],
-            'followers_count': row[7], 'following_count': row[8],
-            'is_monitoring': bool(row[10])
+        conn.close()
+        
+        # 如果没有分页参数，返回简单格式（保持向后兼容）
+        if page == 1 and per_page == 50 and not search_query:
+            return jsonify(researchers)
+        
+        return jsonify({
+            'researchers': researchers,
+            'pagination': {
+                'page': page,
+                'per_page': per_page,
+                'total': total_count,
+                'pages': (total_count + per_page - 1) // per_page
+            }
         })
-    
-    conn.close()
-    
-    return jsonify({
-        'researchers': researchers,
-        'pagination': {
-            'page': page,
-            'per_page': per_page,
-            'total': total_count,
-            'pages': (total_count + per_page - 1) // per_page
-        }
-    })
+        
+    except Exception as e:
+        logger.error(f"获取研究者列表失败: {e}")
+        conn.close()
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/researcher/<int:researcher_id>')
 def get_researcher_detail(researcher_id):
@@ -492,46 +597,57 @@ def get_content():
     per_page = min(per_page, 100)  # 限制最大每页数量
     offset = (page - 1) * per_page
     
-    # 获取总数
-    cursor.execute('SELECT COUNT(*) FROM x_content')
-    total_count = cursor.fetchone()[0]
-    
-    query = '''
-        SELECT c.id, c.content, c.content_type, c.likes_count, c.retweets_count, 
-               c.replies_count, c.created_at, c.collected_at, r.name, r.x_account 
-        FROM x_content c
-        JOIN researchers r ON c.researcher_id = r.id
-        ORDER BY c.created_at DESC
-        LIMIT ? OFFSET ?
-    '''
-    
-    cursor.execute(query, (per_page, offset))
-    content_list = []
-    
-    for row in cursor.fetchall():
-        content_list.append({
-            'id': row[0],
-            'content': row[1],
-            'content_type': row[2],
-            'likes_count': row[3],
-            'retweets_count': row[4],
-            'replies_count': row[5],
-            'created_at': row[6],
-            'collected_at': row[7],
-            'author_name': row[8] or 'Unknown',
-            'author_handle': row[9] or '@unknown'
+    try:
+        # 获取总数
+        cursor.execute('SELECT COUNT(*) FROM x_content')
+        total_count = cursor.fetchone()[0]
+        
+        query = '''
+            SELECT c.id, c.content, c.content_type, c.likes_count, c.retweets_count, 
+                   c.replies_count, c.created_at, c.collected_at, r.name, r.x_account 
+            FROM x_content c
+            JOIN researchers r ON c.researcher_id = r.id
+            ORDER BY c.created_at DESC
+            LIMIT ? OFFSET ?
+        '''
+        
+        cursor.execute(query, (per_page, offset))
+        content_list = []
+        
+        for row in cursor.fetchall():
+            content_list.append({
+                'id': row[0],
+                'content': row[1],
+                'content_type': row[2],
+                'likes_count': row[3],
+                'retweets_count': row[4],
+                'replies_count': row[5],
+                'created_at': row[6],
+                'collected_at': row[7],
+                'author_name': row[8] or 'Unknown',
+                'author_handle': row[9] or '@unknown'
+            })
+        
+        conn.close()
+        
+        # 如果是简单请求（无分页参数），返回简单格式
+        if page == 1 and per_page == 20:
+            return jsonify(content_list)
+            
+        return jsonify({
+            'content': content_list,
+            'pagination': {
+                'page': page,
+                'per_page': per_page,
+                'total': total_count,
+                'pages': (total_count + per_page - 1) // per_page
+            }
         })
-    
-    conn.close()
-    return jsonify({
-        'content': content_list,
-        'pagination': {
-            'page': page,
-            'per_page': per_page,
-            'total': total_count,
-            'pages': (total_count + per_page - 1) // per_page
-        }
-    })
+        
+    except Exception as e:
+        logger.error(f"获取内容列表失败: {e}")
+        conn.close()
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/start_monitoring', methods=['POST'])
 def start_monitoring_route():
@@ -580,7 +696,8 @@ def start_monitoring_route():
         conn.close()
     
     # 确保监控服务正在运行
-    monitoring_service.start_monitoring()
+    if monitoring_service:
+        monitoring_service.start_monitoring()
     
     response_data = {
         'message': f'成功启动监控 {success_count} 位研究者',
@@ -641,7 +758,7 @@ def fetch_researcher_content(researcher_id):
     
     try:
         # 获取最新推文
-        tweets = twitter_api.get_user_tweets(x_account, max_results=10)
+        tweets = twitter_api.get_user_tweets(x_account, max_results=10) if twitter_api else []
         
         new_content_count = 0
         if tweets:
@@ -673,6 +790,75 @@ def fetch_researcher_content(researcher_id):
     except Exception as e:
         conn.close()
         logger.error(f"获取 {name} 内容失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/monitoring_settings')
+def get_monitoring_settings():
+    """获取监控设置"""
+    try:
+        conn = sqlite3.connect('research_platform.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT setting_key, setting_value, description FROM system_settings')
+        settings = {}
+        for row in cursor.fetchall():
+            settings[row[0]] = {
+                'value': row[1],
+                'description': row[2]
+            }
+        
+        conn.close()
+        
+        # 计算当前间隔的人性化显示
+        interval_seconds = int(settings.get('monitoring_interval', {}).get('value', 1800))
+        interval_display = format_interval(interval_seconds)
+        
+        return jsonify({
+            'monitoring_interval': interval_seconds,
+            'interval_display': interval_display,
+            'settings': settings,
+            'predefined_intervals': [
+                {'value': 1800, 'label': '30分钟', 'description': '高频监控，适合热点关注'},
+                {'value': 3600, 'label': '1小时', 'description': '标准监控，平衡效率与时效'},
+                {'value': 7200, 'label': '2小时', 'description': '中等频率，节省资源'},
+                {'value': 21600, 'label': '6小时', 'description': '低频监控，适合长期观察'},
+                {'value': 43200, 'label': '12小时', 'description': '每日两次检查'},
+                {'value': 86400, 'label': '24小时', 'description': '每日一次，最节省资源'}
+            ]
+        })
+        
+    except Exception as e:
+        logger.error(f"获取监控设置失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/monitoring_settings', methods=['POST'])
+def update_monitoring_settings():
+    """更新监控设置"""
+    try:
+        data = request.get_json()
+        interval_seconds = data.get('monitoring_interval')
+        
+        if not interval_seconds or not isinstance(interval_seconds, int):
+            return jsonify({'error': '无效的监控间隔值'}), 400
+        
+        if interval_seconds < 300:  # 最小5分钟
+            return jsonify({'error': '监控间隔不能少于5分钟（300秒）'}), 400
+        
+        if interval_seconds > 604800:  # 最大7天
+            return jsonify({'error': '监控间隔不能超过7天（604800秒）'}), 400
+        
+        # 更新监控服务的间隔
+        if monitoring_service and monitoring_service.update_monitoring_interval(interval_seconds):
+            return jsonify({
+                'message': f'监控间隔已更新为 {format_interval(interval_seconds)}',
+                'new_interval': interval_seconds,
+                'interval_display': format_interval(interval_seconds)
+            })
+        else:
+            return jsonify({'error': '更新监控间隔失败'}), 500
+            
+    except Exception as e:
+        logger.error(f"更新监控设置失败: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/analytics')
@@ -717,6 +903,18 @@ def get_analytics():
     max_capacity = 5000  # 最大支持容量
     current_capacity = cursor.fetchone()[0] or 0
     
+    # 获取监控间隔设置
+    monitoring_interval = 1800  # 默认值
+    interval_display = "30分钟"
+    try:
+        cursor.execute('SELECT setting_value FROM system_settings WHERE setting_key = ?', ('monitoring_interval',))
+        result = cursor.fetchone()
+        if result:
+            monitoring_interval = int(result[0])
+            interval_display = format_interval(monitoring_interval)
+    except Exception as e:
+        logger.error(f"获取监控间隔设置失败: {e}")
+    
     conn.close()
     
     return jsonify({
@@ -727,8 +925,10 @@ def get_analytics():
         'country_distribution': country_distribution,
         'company_distribution': company_distribution,
         'content_trend': content_trend,
-        'api_status': 'connected' if twitter_api.client else 'disconnected',
-        'monitoring_active': monitoring_service.running,
+        'api_status': 'connected' if twitter_api and twitter_api.client else 'disconnected',
+        'monitoring_active': monitoring_service and monitoring_service.running,
+        'monitoring_interval': monitoring_interval,
+        'interval_display': interval_display,
         'capacity': {
             'current': total_researchers,
             'monitoring': monitoring_researchers,
@@ -847,26 +1047,6 @@ def upload_excel():
             'suggestion': '请检查文件格式，确保包含必要的列：排名、姓名、国家、公司、研究领域、X账号'
         }), 500
 
-def insert_researcher_batch(cursor, batch_data, error_details):
-    """批量插入研究者数据"""
-    added_count = 0
-    
-    for data in batch_data:
-        try:
-            cursor.execute('''
-                INSERT OR REPLACE INTO researchers 
-                (rank, name, country, company, research_focus, x_account)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', data)
-            added_count += 1
-            
-        except Exception as e:
-            error_msg = f"插入数据失败 {data[1]}: {str(e)}"
-            error_details.append(error_msg)
-            logger.error(error_msg)
-    
-    return added_count
-
 @app.route('/api/system_status')
 def get_system_status():
     """获取系统状态信息"""
@@ -890,6 +1070,16 @@ def get_system_status():
     ''')
     recent_content = cursor.fetchone()[0]
     
+    # 获取监控间隔
+    monitoring_interval = 1800
+    try:
+        cursor.execute('SELECT setting_value FROM system_settings WHERE setting_key = ?', ('monitoring_interval',))
+        result = cursor.fetchone()
+        if result:
+            monitoring_interval = int(result[0])
+    except Exception as e:
+        logger.error(f"获取监控间隔失败: {e}")
+    
     conn.close()
     
     return jsonify({
@@ -902,14 +1092,16 @@ def get_system_status():
         'monitoring_status': {
             'active_monitoring': monitoring_count,
             'max_concurrent': 1000,
-            'service_running': monitoring_service.running
+            'service_running': monitoring_service and monitoring_service.running,
+            'monitoring_interval': monitoring_interval,
+            'interval_display': format_interval(monitoring_interval)
         },
         'data_statistics': {
             'total_content': total_content,
             'recent_24h': recent_content
         },
         'api_status': {
-            'twitter_connected': twitter_api.client is not None,
+            'twitter_connected': twitter_api and twitter_api.client is not None,
             'last_check': datetime.now().isoformat()
         }
     })
