@@ -948,15 +948,40 @@
         });
 
         function initializeApp() {
+            updateStatus('系统初始化中...', 'warning');
+            console.log('开始初始化应用');
+            
             loadAnalytics()
-                .then(() => loadResearchers(1))
                 .then(() => {
+                    console.log('分析数据加载完成');
+                    return loadResearchers(1);
+                })
+                .then(() => {
+                    console.log('研究者数据加载完成');
                     updateStatus('系统运行正常', 'success');
                     renderCurrentView();
                 })
                 .catch(error => {
                     console.error('初始化失败:', error);
-                    updateStatus('系统初始化失败', 'error');
+                    updateStatus('系统初始化失败: ' + error.message, 'error');
+                    
+                    // 即使初始化失败，也尝试渲染基本界面
+                    try {
+                        renderCurrentView();
+                    } catch (renderError) {
+                        console.error('渲染失败:', renderError);
+                        dynamicContent.innerHTML = `
+                            <div class="content-section glass">
+                                <div style="text-align: center; padding: 4rem;">
+                                    <h3 style="color: #ef4444; margin-bottom: 1rem;">❌ 系统初始化失败</h3>
+                                    <p style="color: rgba(255,255,255,0.7); margin-bottom: 2rem;">请检查网络连接和服务器状态</p>
+                                    <button class="btn btn-primary" onclick="location.reload()">
+                                        <i class="fas fa-sync"></i> 重新加载
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    }
                 });
         }
 
@@ -1021,28 +1046,41 @@
         }
 
         function renderCurrentView() {
-            switch(currentView) {
-                case 'dashboard':
-                    renderDashboard();
-                    break;
-                case 'researchers':
-                    renderResearchers();
-                    break;
-                case 'content':
-                    renderContent();
-                    break;
-                case 'special-focus':
-                    renderSpecialFocus();
-                    break;
-                case 'analytics':
-                    renderAnalytics();
-                    break;
-                case 'monitoring-settings':
-                    renderMonitoringSettings();
-                    break;
-                case 'system':
-                    renderSystemStatus();
-                    break;
+            console.log('渲染视图:', currentView);
+            try {
+                switch(currentView) {
+                    case 'dashboard':
+                        renderDashboard();
+                        break;
+                    case 'researchers':
+                        renderResearchers();
+                        break;
+                    case 'content':
+                        renderContent();
+                        break;
+                    case 'special-focus':
+                        renderSpecialFocus();
+                        break;
+                    case 'analytics':
+                        renderAnalytics();
+                        break;
+                    case 'monitoring-settings':
+                        renderMonitoringSettings();
+                        break;
+                    case 'system':
+                        renderSystemStatus();
+                        break;
+                    default:
+                        console.warn('未知视图:', currentView);
+                        renderDashboard();
+                }
+            } catch (error) {
+                console.error('渲染视图失败:', currentView, error);
+                updateStatus('页面渲染失败: ' + error.message, 'error');
+                
+                // 回退到仪表板
+                currentView = 'dashboard';
+                renderDashboard();
             }
         }
 
@@ -1101,6 +1139,7 @@
 
         async function loadResearchers(page = 1, search = '') {
             try {
+                console.log(`正在加载研究者数据 - 页面: ${page}, 搜索: "${search}"`);
                 currentPage = page;
                 searchQuery = search;
                 
@@ -1110,6 +1149,7 @@
                 }
                 
                 const response = await apiCall(url);
+                console.log('API响应:', response);
                 
                 // 处理新的API响应格式
                 if (response.researchers) {
@@ -1124,10 +1164,18 @@
                 }
                 
                 console.log('研究者数据加载成功:', researchers.length, `页面 ${page}/${totalPages}`);
+                
+                // 确保所有研究者都有is_special_focus属性
+                researchers = researchers.map(r => ({
+                    ...r,
+                    is_special_focus: Boolean(r.is_special_focus)
+                }));
+                
             } catch (error) {
                 console.error('加载研究者数据失败:', error);
                 researchers = [];
                 totalPages = 1;
+                updateStatus('加载研究者数据失败: ' + error.message, 'error');
             }
         }
 
@@ -1272,6 +1320,10 @@
                                 style="background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444;">
                             <i class="fas fa-trash"></i> 删除选中
                         </button>
+                        <button class="btn btn-secondary" onclick="debugResearchers()" 
+                                style="background: rgba(128, 128, 128, 0.2); border: 1px solid rgba(128, 128, 128, 0.3); color: #888;">
+                            <i class="fas fa-bug"></i> 调试
+                        </button>
                     </div>
                 </div>
 
@@ -1309,52 +1361,72 @@
             `;
 
             // 绑定搜索事件
-            document.getElementById('researcherSearch').addEventListener('input', debounce((e) => {
-                const query = e.target.value.trim();
-                loadResearchers(1, query).then(() => {
-                    document.getElementById('researchers-loading').style.display = 'none';
-                    document.getElementById('researchers-container').style.display = 'block';
-                    document.getElementById('researchers-grid').innerHTML = renderResearcherCards();
-                    bindPaginationEvents();
-                    updateSelectedCount();
-                });
-            }, 500));
+            setTimeout(() => {
+                const searchInput = document.getElementById('researcherSearch');
+                if (searchInput) {
+                    searchInput.addEventListener('input', debounce((e) => {
+                        const query = e.target.value.trim();
+                        loadResearchers(1, query).then(() => {
+                            document.getElementById('researchers-loading').style.display = 'none';
+                            document.getElementById('researchers-container').style.display = 'block';
+                            document.getElementById('researchers-grid').innerHTML = renderResearcherCards();
+                            bindPaginationEvents();
+                            updateSelectedCount();
+                        });
+                    }, 500));
+                }
 
-            // 全选功能
-            document.getElementById('selectAll').addEventListener('change', (e) => {
-                const checkboxes = document.querySelectorAll('.researcher-checkbox');
-                checkboxes.forEach(cb => {
-                    cb.checked = e.target.checked;
-                });
-                updateSelectedCount();
-            });
+                // 全选功能
+                const selectAllBtn = document.getElementById('selectAll');
+                if (selectAllBtn) {
+                    selectAllBtn.addEventListener('change', (e) => {
+                        const checkboxes = document.querySelectorAll('.researcher-checkbox');
+                        checkboxes.forEach(cb => {
+                            cb.checked = e.target.checked;
+                        });
+                        updateSelectedCount();
+                    });
+                }
 
-            // 筛选按钮
-            document.getElementById('filterAll').addEventListener('click', () => {
-                document.getElementById('filterAll').classList.add('active');
-                document.getElementById('filterMonitoring').classList.remove('active');
-                filterByStatus(false);
-            });
+                // 筛选按钮
+                const filterAllBtn = document.getElementById('filterAll');
+                const filterMonitoringBtn = document.getElementById('filterMonitoring');
+                
+                if (filterAllBtn) {
+                    filterAllBtn.addEventListener('click', () => {
+                        filterAllBtn.classList.add('active');
+                        if (filterMonitoringBtn) filterMonitoringBtn.classList.remove('active');
+                        filterByStatus(false);
+                    });
+                }
 
-            document.getElementById('filterMonitoring').addEventListener('click', () => {
-                document.getElementById('filterMonitoring').classList.add('active');
-                document.getElementById('filterAll').classList.remove('active');
-                filterByStatus(true);
-            });
+                if (filterMonitoringBtn) {
+                    filterMonitoringBtn.addEventListener('click', () => {
+                        filterMonitoringBtn.classList.add('active');
+                        if (filterAllBtn) filterAllBtn.classList.remove('active');
+                        filterByStatus(true);
+                    });
+                }
 
-            // 监控按钮
-            bindMonitoringButton();
+                // 监控按钮
+                bindMonitoringButton();
 
-            // 特别关注按钮
-            bindSpecialFocusButton();
+                // 特别关注按钮
+                bindSpecialFocusButton();
 
-            // 删除按钮
-            document.getElementById('deleteSelectedBtn').addEventListener('click', deleteBatchResearchers);
+                // 删除按钮
+                const deleteBtn = document.getElementById('deleteSelectedBtn');
+                if (deleteBtn) {
+                    deleteBtn.addEventListener('click', deleteBatchResearchers);
+                }
+            }, 100);
 
             // 模拟加载
             setTimeout(() => {
-                document.getElementById('researchers-loading').style.display = 'none';
-                document.getElementById('researchers-container').style.display = 'block';
+                const loadingEl = document.getElementById('researchers-loading');
+                const containerEl = document.getElementById('researchers-container');
+                if (loadingEl) loadingEl.style.display = 'none';
+                if (containerEl) containerEl.style.display = 'block';
                 bindPaginationEvents();
                 updateSelectedCount();
             }, 1000);
@@ -1918,10 +1990,25 @@
 
         async function toggleSpecialFocus(researcherId) {
             try {
-                const researcher = researchers.find(r => r.id === researcherId);
-                if (!researcher) return;
+                console.log('切换特别关注状态 - 研究者ID:', researcherId);
+                
+                let researcher = researchers.find(r => r.id === researcherId);
+                if (!researcher) {
+                    console.warn('在本地数组中未找到研究者，尝试从API获取');
+                    // 如果本地找不到，先刷新数据
+                    await loadResearchers(currentPage, searchQuery);
+                    researcher = researchers.find(r => r.id === researcherId);
+                }
+                
+                if (!researcher) {
+                    console.error('无法找到研究者');
+                    updateStatus('无法找到指定的研究者', 'error');
+                    return;
+                }
 
                 const isSpecial = !researcher.is_special_focus;
+                console.log('设置特别关注状态为:', isSpecial);
+                
                 await setSpecialFocus([researcherId], isSpecial);
                 
             } catch (error) {
@@ -2228,6 +2315,28 @@
                 }
             }
         }
+
+        // 调试函数
+        function debugResearchers() {
+            console.log('=== 调试信息 ===');
+            console.log('当前页面:', currentPage);
+            console.log('总页数:', totalPages);
+            console.log('搜索查询:', searchQuery);
+            console.log('研究者数组长度:', researchers.length);
+            console.log('研究者数据样本:', researchers.slice(0, 3));
+            console.log('当前视图:', currentView);
+            
+            const gridElement = document.getElementById('researchers-grid');
+            console.log('研究者网格元素:', gridElement);
+            console.log('网格元素内容长度:', gridElement ? gridElement.innerHTML.length : 'null');
+            
+            alert(`调试信息：
+当前页面: ${currentPage}/${totalPages}
+研究者数量: ${researchers.length}
+当前视图: ${currentView}
+网格元素: ${gridElement ? '存在' : '不存在'}
+详细信息请查看浏览器控制台`);
+        }
                 
             } catch (error) {
                 console.error('加载监控设置失败:', error);
@@ -2361,63 +2470,80 @@
                 return '<p style="text-align: center; color: rgba(255,255,255,0.7); grid-column: 1/-1;">暂无研究者数据</p>';
             }
 
-            return researchers.map(researcher => `
-                <div class="researcher-card glass glass-hover" data-id="${researcher.id}">
-                    <input type="checkbox" class="researcher-checkbox" data-id="${researcher.id}" 
-                           style="position: absolute; top: 1rem; left: 1rem; cursor: pointer;" 
-                           onchange="updateSelectedCount()">
-                    
-                    <div class="researcher-actions">
-                        <button class="action-btn ${researcher.is_monitoring ? 'monitoring' : ''}" 
-                                onclick="toggleMonitoring(${researcher.id})" 
-                                title="${researcher.is_monitoring ? '停止监控' : '开始监控'}">
-                            <i class="fas ${researcher.is_monitoring ? 'fa-pause' : 'fa-play'}"></i>
-                        </button>
-                        <button class="action-btn ${researcher.is_special_focus ? 'special-focus' : ''}" 
-                                onclick="toggleSpecialFocus(${researcher.id})" 
-                                title="${researcher.is_special_focus ? '取消特别关注' : '设为特别关注'}"
-                                style="${researcher.is_special_focus ? 'background: rgba(255, 193, 7, 0.2); color: #ffc107;' : ''}">
-                            <i class="fas fa-star"></i>
-                        </button>
-                        <button class="action-btn" onclick="fetchContent(${researcher.id})" title="立即获取内容">
-                            <i class="fas fa-sync"></i>
-                        </button>
-                        ${researcher.is_special_focus ? `
-                        <button class="action-btn" onclick="showHistoricalModal(${researcher.id})" title="查看历史"
-                                style="background: rgba(16, 185, 129, 0.2); color: #10b981;">
-                            <i class="fas fa-history"></i>
-                        </button>
-                        ` : ''}
-                        <button class="action-btn" onclick="showResearcherModal(${researcher.id})" title="查看详情">
-                            <i class="fas fa-eye"></i>
-                        </button>
-                        <button class="action-btn" onclick="confirmDeleteResearcher(${researcher.id})" 
-                                title="删除研究者" style="color: #ef4444;">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </div>
-                    
-                    <div class="researcher-header" style="margin-left: 2rem;">
-                        <div class="researcher-avatar">${getInitials(researcher.name)}</div>
-                        <div>
-                            <h4>${researcher.name}</h4>
-                            <p style="color: rgba(255,255,255,0.7); font-size: 0.875rem;">${researcher.x_account}</p>
+            return researchers.map(researcher => {
+                // 确保所有属性都有默认值
+                const safeResearcher = {
+                    id: researcher.id || 0,
+                    rank: researcher.rank || 0,
+                    name: researcher.name || '未知',
+                    country: researcher.country || '未知',
+                    company: researcher.company || '未知',
+                    research_focus: researcher.research_focus || '未知',
+                    x_account: researcher.x_account || '@unknown',
+                    followers_count: researcher.followers_count || '0',
+                    following_count: researcher.following_count || '0',
+                    is_monitoring: Boolean(researcher.is_monitoring),
+                    is_special_focus: Boolean(researcher.is_special_focus)
+                };
+
+                return `
+                    <div class="researcher-card glass glass-hover" data-id="${safeResearcher.id}">
+                        <input type="checkbox" class="researcher-checkbox" data-id="${safeResearcher.id}" 
+                               style="position: absolute; top: 1rem; left: 1rem; cursor: pointer;" 
+                               onchange="updateSelectedCount()">
+                        
+                        <div class="researcher-actions">
+                            <button class="action-btn ${safeResearcher.is_monitoring ? 'monitoring' : ''}" 
+                                    onclick="toggleMonitoring(${safeResearcher.id})" 
+                                    title="${safeResearcher.is_monitoring ? '停止监控' : '开始监控'}">
+                                <i class="fas ${safeResearcher.is_monitoring ? 'fa-pause' : 'fa-play'}"></i>
+                            </button>
+                            <button class="action-btn ${safeResearcher.is_special_focus ? 'special-focus' : ''}" 
+                                    onclick="toggleSpecialFocus(${safeResearcher.id})" 
+                                    title="${safeResearcher.is_special_focus ? '取消特别关注' : '设为特别关注'}"
+                                    style="${safeResearcher.is_special_focus ? 'background: rgba(255, 193, 7, 0.2); color: #ffc107;' : ''}">
+                                <i class="fas fa-star"></i>
+                            </button>
+                            <button class="action-btn" onclick="fetchContent(${safeResearcher.id})" title="立即获取内容">
+                                <i class="fas fa-sync"></i>
+                            </button>
+                            ${safeResearcher.is_special_focus ? `
+                            <button class="action-btn" onclick="showHistoricalModal(${safeResearcher.id})" title="查看历史"
+                                    style="background: rgba(16, 185, 129, 0.2); color: #10b981;">
+                                <i class="fas fa-history"></i>
+                            </button>
+                            ` : ''}
+                            <button class="action-btn" onclick="showResearcherModal(${safeResearcher.id})" title="查看详情">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <button class="action-btn" onclick="confirmDeleteResearcher(${safeResearcher.id})" 
+                                    title="删除研究者" style="color: #ef4444;">
+                                <i class="fas fa-trash"></i>
+                            </button>
                         </div>
-                        <span class="researcher-rank">#${researcher.rank}</span>
+                        
+                        <div class="researcher-header" style="margin-left: 2rem;">
+                            <div class="researcher-avatar">${getInitials(safeResearcher.name)}</div>
+                            <div>
+                                <h4>${safeResearcher.name}</h4>
+                                <p style="color: rgba(255,255,255,0.7); font-size: 0.875rem;">${safeResearcher.x_account}</p>
+                            </div>
+                            <span class="researcher-rank">#${safeResearcher.rank}</span>
+                        </div>
+                        <div class="researcher-meta" style="margin-left: 2rem;">
+                            <span><i class="fas fa-map-marker-alt"></i> ${safeResearcher.country}</span>
+                            <span><i class="fas fa-building"></i> ${safeResearcher.company}</span>
+                        </div>
+                        <div class="researcher-research" style="margin-left: 2rem;">${safeResearcher.research_focus}</div>
+                        <div class="researcher-stats" style="margin-left: 2rem;">
+                            <span><strong>${safeResearcher.followers_count}</strong> 关注者</span>
+                            <span><strong>${safeResearcher.following_count}</strong> 正在关注</span>
+                            ${safeResearcher.is_monitoring ? '<span style="color: #22c55e;"><i class="fas fa-circle"></i> 监控中</span>' : ''}
+                            ${safeResearcher.is_special_focus ? '<span style="color: #ffc107;"><i class="fas fa-star"></i> 特别关注</span>' : ''}
+                        </div>
                     </div>
-                    <div class="researcher-meta" style="margin-left: 2rem;">
-                        <span><i class="fas fa-map-marker-alt"></i> ${researcher.country}</span>
-                        <span><i class="fas fa-building"></i> ${researcher.company}</span>
-                    </div>
-                    <div class="researcher-research" style="margin-left: 2rem;">${researcher.research_focus}</div>
-                    <div class="researcher-stats" style="margin-left: 2rem;">
-                        <span><strong>${researcher.followers_count}</strong> 关注者</span>
-                        <span><strong>${researcher.following_count}</strong> 正在关注</span>
-                        ${researcher.is_monitoring ? '<span style="color: #22c55e;"><i class="fas fa-circle"></i> 监控中</span>' : ''}
-                        ${researcher.is_special_focus ? '<span style="color: #ffc107;"><i class="fas fa-star"></i> 特别关注</span>' : ''}
-                    </div>
-                </div>
-            `).join('');
+                `;
+            }).join('');
         }
 
         function renderContentCards() {
@@ -2746,6 +2872,31 @@
             }
         }
 
+        // 特别关注相关函数
+        function bindSpecialFocusButton() {
+            const btn = document.getElementById('specialFocusBtn');
+            if (btn) {
+                btn.addEventListener('click', async () => {
+                    console.log('特别关注按钮被点击');
+                    const selected = getSelectedResearchers();
+                    console.log('选中的研究者ID:', selected);
+                    
+                    if (selected.length > 0) {
+                        await setSpecialFocus(selected, true);
+                        // 清除选择
+                        document.querySelectorAll('.researcher-checkbox').forEach(cb => cb.checked = false);
+                        const selectAllBtn = document.getElementById('selectAll');
+                        if (selectAllBtn) selectAllBtn.checked = false;
+                        updateSelectedCount();
+                    } else {
+                        alert('请先选择要设为特别关注的研究者');
+                    }
+                });
+            } else {
+                console.warn('未找到特别关注按钮');
+            }
+        }
+
         // 修正监控按钮绑定
         function bindMonitoringButton() {
             const btn = document.getElementById('startMonitoringBtn');
@@ -2759,12 +2910,15 @@
                         await startMonitoring(selected);
                         // 清除选择
                         document.querySelectorAll('.researcher-checkbox').forEach(cb => cb.checked = false);
-                        document.getElementById('selectAll').checked = false;
+                        const selectAllBtn = document.getElementById('selectAll');
+                        if (selectAllBtn) selectAllBtn.checked = false;
                         updateSelectedCount();
                     } else {
                         alert('请先选择要监控的研究者');
                     }
                 });
+            } else {
+                console.warn('未找到监控按钮');
             }
         }
 
