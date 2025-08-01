@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 # Twitter API配置
 TWITTER_BEARER_TOKEN = os.environ.get('TWITTER_BEARER_TOKEN')
 
+# 数据库文件路径
+DB_FILE = 'research_platform.db'
+
 def format_interval(seconds):
     """将秒数格式化为人性化的时间显示"""
     if seconds < 3600:
@@ -498,10 +501,6 @@ def get_researchers():
             })
         
         conn.close()
-        
-        # 如果没有分页参数，返回简单格式（保持向后兼容）
-        if page == 1 and per_page == 50 and not search_query:
-            return jsonify(researchers)
         
         return jsonify({
             'researchers': researchers,
@@ -1047,8 +1046,80 @@ def upload_excel():
             'suggestion': '请检查文件格式，确保包含必要的列：排名、姓名、国家、公司、研究领域、X账号'
         }), 500
 
-@app.route('/api/system_status')
-def get_system_status():
+@app.route('/api/database_status')
+def get_database_status():
+    """获取数据库状态信息"""
+    try:
+        conn = sqlite3.connect('research_platform.db')
+        cursor = conn.cursor()
+        
+        # 检查各表的记录数
+        cursor.execute('SELECT COUNT(*) FROM researchers')
+        researchers_count = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT COUNT(*) FROM x_content')
+        content_count = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT COUNT(*) FROM monitoring_tasks')
+        tasks_count = cursor.fetchone()[0]
+        
+        # 检查数据库文件大小
+        import os
+        db_size = os.path.getsize('research_platform.db') if os.path.exists('research_platform.db') else 0
+        
+        # 检查初始化状态
+        cursor.execute('SELECT value FROM db_metadata WHERE key = ?', ('sample_data_loaded',))
+        initialized = cursor.fetchone()
+        
+        conn.close()
+        
+        return jsonify({
+            'database_file': 'research_platform.db',
+            'file_exists': os.path.exists('research_platform.db'),
+            'file_size_bytes': db_size,
+            'file_size_mb': round(db_size / 1024 / 1024, 2),
+            'tables': {
+                'researchers': researchers_count,
+                'x_content': content_count,
+                'monitoring_tasks': tasks_count
+            },
+            'initialized': bool(initialized),
+            'status': 'healthy' if researchers_count > 0 else 'empty'
+        })
+        
+    except Exception as e:
+        logger.error(f"获取数据库状态失败: {e}")
+        return jsonify({'error': str(e), 'status': 'error'}), 500
+
+@app.route('/api/reset_sample_data', methods=['POST'])
+def reset_sample_data():
+    """重置示例数据（仅用于测试和恢复）"""
+    try:
+        if researcher_manager:
+            conn = sqlite3.connect('research_platform.db')
+            cursor = conn.cursor()
+            
+            # 删除现有示例数据（基于名字判断）
+            sample_names = ['Ilya Sutskever', 'Noam Shazeer', 'Geoffrey Hinton', 'Alec Radford', 'Andrej Karpathy']
+            for name in sample_names:
+                cursor.execute('DELETE FROM researchers WHERE name = ?', (name,))
+            
+            # 重置初始化标记
+            cursor.execute('DELETE FROM db_metadata WHERE key = ?', ('sample_data_loaded',))
+            
+            conn.commit()
+            conn.close()
+            
+            # 重新加载示例数据
+            researcher_manager.load_sample_data_if_empty()
+            
+            return jsonify({'message': '示例数据已重置', 'status': 'success'})
+        else:
+            return jsonify({'error': '研究者管理器未初始化'}), 500
+            
+    except Exception as e:
+        logger.error(f"重置示例数据失败: {e}")
+        return jsonify({'error': str(e)}), 500
     """获取系统状态信息"""
     conn = sqlite3.connect('research_platform.db')
     cursor = conn.cursor()
@@ -1138,7 +1209,22 @@ def get_init_status():
 if __name__ == '__main__':
     logger.info("🚀 AI研究者X内容学习平台启动中...")
     logger.info(f"📊 系统容量: 最大支持 5000 位研究者监控")
-    logger.info(f"Twitter API: {'✅ 已配置' if TWITTER_BEARER_TOKEN else '⚠️ 未配置，将无法获取真实数据'}")
+    logger.info(f"💾 数据库文件: research_platform.db")
+    
+    # 检查数据库状态
+    if researcher_manager:
+        import os
+        if os.path.exists('research_platform.db'):
+            conn = sqlite3.connect('research_platform.db')
+            cursor = conn.cursor()
+            cursor.execute('SELECT COUNT(*) FROM researchers')
+            count = cursor.fetchone()[0]
+            conn.close()
+            logger.info(f"📋 数据库状态: 已有 {count} 位研究者")
+        else:
+            logger.info("📋 数据库状态: 新建数据库")
+    
+    logger.info(f"🔑 Twitter API: {'✅ 已配置' if TWITTER_BEARER_TOKEN else '⚠️ 未配置，将无法获取真实数据'}")
     
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
