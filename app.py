@@ -65,68 +65,88 @@ class TwitterAPI:
     def __init__(self):
         self.client = None
         self.api_working = False
-
+        self.connection_tested = False
+        
         if TWITTER_BEARER_TOKEN:
             try:
                 self.client = tweepy.Client(
                     bearer_token=TWITTER_BEARER_TOKEN,
-                    wait_on_rate_limit=False
+                    wait_on_rate_limit=False  # 避免启动时阻塞
                 )
                 logger.info("✅ Twitter API客户端初始化成功")
+                logger.info("⏳ Twitter API连接将在首次使用时测试")
             except Exception as e:
                 logger.error(f"❌ Twitter API初始化失败: {e}")
                 self.client = None
         else:
             self.client = None
             logger.warning("⚠️ Twitter Bearer Token未配置，将无法获取真实数据")
-
+    
     def test_connection(self):
-        """测试API连接"""
+        """测试API连接 - 只在需要时调用"""
+        if self.connection_tested:
+            return self.api_working
+            
         try:
             if self.client:
-                user = self.client.get_user(username='twitter', user_fields=['public_metrics'])
+                # 使用更简单的API调用来测试
+                user = self.client.get_me()
                 if user and user.data:
                     logger.info("🔗 Twitter API连接测试成功")
                     self.api_working = True
+                    self.connection_tested = True
                     return True
                 else:
                     logger.error("❌ Twitter API测试失败：无法获取用户数据")
                     self.api_working = False
+                    self.connection_tested = True
+        except tweepy.TooManyRequests:
+            logger.warning("⚠️ API连接测试达到速率限制，将稍后重试")
+            self.api_working = False
+            # 不设置connection_tested=True，允许稍后重试
         except Exception as e:
             logger.error(f"❌ API连接测试失败: {e}")
             self.api_working = False
+            self.connection_tested = True
         return False
-
+    
+    def ensure_connection(self):
+        """确保API连接可用，如果未测试则先测试"""
+        if not self.connection_tested:
+            self.test_connection()
+        return self.api_working
+    
     def get_user_info(self, username):
         """获取用户基本信息，包括关注者数量"""
         if not self.client:
             logger.warning(f"Twitter客户端未配置，无法获取 {username} 的用户信息")
             return None
-
-        if not self.api_working:
-            logger.warning(f"Twitter API未正常工作，跳过获取 {username} 的用户信息")
+        
+        # 确保连接可用
+        if not self.ensure_connection():
+            logger.warning(f"Twitter API连接不可用，跳过获取 {username} 的用户信息")
             return None
-
+        
         try:
             username = username.replace('@', '').strip()
             if not username:
                 logger.warning("用户名为空")
                 return None
-
+            
             logger.info(f"🔍 正在获取用户信息: {username}")
-
+            
             user_response = self.client.get_user(
                 username=username,
                 user_fields=['public_metrics', 'profile_image_url', 'description', 'verified']
             )
-
+            
             if not user_response or not user_response.data:
                 logger.warning(f"❌ Twitter用户 {username} 不存在或无法访问")
                 return None
-
+            
             user = user_response.data
             public_metrics = getattr(user, 'public_metrics', {})
-
+            
             user_info = {
                 'id': str(user.id),
                 'username': user.username,
@@ -139,10 +159,10 @@ class TwitterAPI:
                 'description': getattr(user, 'description', ''),
                 'verified': getattr(user, 'verified', False)
             }
-
+            
             logger.info(f"✅ 成功获取 {username} 的信息: {user_info['followers_count']} 关注者, {user_info['following_count']} 正在关注")
             return user_info
-
+            
         except tweepy.Unauthorized:
             logger.error(f"❌ 无权访问用户 {username}，可能是私人账户或API权限不足")
             return None
@@ -151,235 +171,235 @@ class TwitterAPI:
             return None
         except tweepy.TooManyRequests:
             logger.error(f"❌ API请求过于频繁，请稍后再试")
+            self.api_working = False
             return None
         except Exception as e:
             logger.error(f"❌ 获取 {username} 用户信息时发生错误: {e}")
             return None
 
-def get_user_tweets(self, username, max_results=10, start_time=None, end_time=None):
-    """修复版本：获取用户推文，专门解决推文抓取问题"""
-    if not self.client:
-        logger.warning(f"Twitter客户端未配置，无法获取 {username} 的推文")
-        return []
-
-    # 确保连接可用
-    if not self.ensure_connection():
-        logger.warning(f"Twitter API连接不可用，跳过获取 {username} 的推文")
-        return []
-
-    try:
-        username = username.replace('@', '').strip()
-        if not username:
-            logger.warning("用户名为空")
+    def get_user_tweets(self, username, max_results=10, start_time=None, end_time=None):
+        """获取用户推文，支持自定义时间范围 - 修复版本"""
+        if not self.client:
+            logger.warning(f"Twitter客户端未配置，无法获取 {username} 的推文")
             return []
-
-        logger.info(f"🔍 正在获取推文: {username}, 最大数量: {max_results}")
-
-        # 首先获取用户信息
-        user_response = self.client.get_user(username=username)
-        if not user_response or not user_response.data:
-            logger.warning(f"❌ 无法找到用户 {username}")
+        
+        # 确保连接可用
+        if not self.ensure_connection():
+            logger.warning(f"Twitter API连接不可用，跳过获取 {username} 的推文")
             return []
-
-        user_id = user_response.data.id
-        logger.info(f"✅ 找到用户 {username}, ID: {user_id}")
-
-        # 🔴 关键修复1: 更合理的时间范围设置
-        if not start_time:
-            # 改为获取最近7天的内容，而不是30天
-            start_time = datetime.now(timezone.utc) - timedelta(days=7)
-        if not end_time:
-            end_time = datetime.now(timezone.utc)
-
-        logger.info(f"📅 时间范围: {start_time.strftime('%Y-%m-%d %H:%M:%S UTC')} 到 {end_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        logger.info(f"⏱️ 时间跨度: {(end_time - start_time).days} 天")
-
-        # 限制最大结果数
-        max_results = min(max_results, 100)
-
-        # 🔴 关键修复2: 先尝试获取所有类型的推文
-        logger.info(f"🐦 尝试获取所有类型的推文...")
-
+        
         try:
-            tweets_response = self.client.get_users_tweets(
-                id=user_id,
-                max_results=max_results,
-                tweet_fields=[
-                    'created_at', 'public_metrics', 'context_annotations',
-                    'attachments', 'author_id', 'conversation_id', 'referenced_tweets'
-                ],
-                media_fields=['url', 'preview_image_url', 'type'],
-                expansions=['attachments.media_keys', 'referenced_tweets.id'],
-                # 🔴 不排除任何类型的推文
-                start_time=start_time,
-                end_time=end_time
-            )
-
-            if tweets_response and tweets_response.data:
-                logger.info(f"✅ 成功获取所有类型推文: {len(tweets_response.data)} 条")
-            else:
-                logger.info(f"⚠️ 所有类型推文获取结果为空，尝试只获取原创推文...")
-
-                # 🔴 关键修复3: 如果获取所有类型失败，尝试只获取原创推文
+            username = username.replace('@', '').strip()
+            if not username:
+                logger.warning("用户名为空")
+                return []
+            
+            logger.info(f"🔍 正在获取推文: {username}, 最大数量: {max_results}")
+            
+            # 首先获取用户信息
+            user_response = self.client.get_user(username=username)
+            if not user_response or not user_response.data:
+                logger.warning(f"❌ 无法找到用户 {username}")
+                return []
+            
+            user_id = user_response.data.id
+            logger.info(f"✅ 找到用户 {username}, ID: {user_id}")
+            
+            # 修复时间范围设置 - 改为获取最近7天的内容
+            if not start_time:
+                start_time = datetime.now(timezone.utc) - timedelta(days=7)
+            if not end_time:
+                end_time = datetime.now(timezone.utc)
+            
+            logger.info(f"📅 时间范围: {start_time.strftime('%Y-%m-%d %H:%M:%S UTC')} 到 {end_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+            logger.info(f"⏱️ 时间跨度: {(end_time - start_time).days} 天")
+            
+            # 限制最大结果数
+            max_results = min(max_results, 100)
+            
+            # 先尝试获取所有类型的推文
+            logger.info(f"🐦 尝试获取所有类型的推文...")
+            
+            try:
                 tweets_response = self.client.get_users_tweets(
                     id=user_id,
                     max_results=max_results,
-                    tweet_fields=['created_at', 'public_metrics', 'attachments', 'author_id'],
+                    tweet_fields=[
+                        'created_at', 'public_metrics', 'context_annotations', 
+                        'attachments', 'author_id', 'conversation_id', 'referenced_tweets'
+                    ],
                     media_fields=['url', 'preview_image_url', 'type'],
-                    expansions=['attachments.media_keys'],
-                    exclude=['retweets', 'replies'],  # 只在第二次尝试时排除
+                    expansions=['attachments.media_keys', 'referenced_tweets.id'],
+                    # 不排除任何类型的推文
                     start_time=start_time,
                     end_time=end_time
                 )
-
+                
                 if tweets_response and tweets_response.data:
-                    logger.info(f"✅ 获取原创推文成功: {len(tweets_response.data)} 条")
+                    logger.info(f"✅ 成功获取所有类型推文: {len(tweets_response.data)} 条")
                 else:
-                    logger.warning(f"⚠️ 原创推文也获取失败，尝试扩大时间范围...")
-
-                    # 🔴 关键修复4: 扩大时间范围再试一次
-                    extended_start_time = datetime.now(timezone.utc) - timedelta(days=30)
-                    logger.info(f"🔄 扩大时间范围到30天: {extended_start_time.strftime('%Y-%m-%d')} 到 {end_time.strftime('%Y-%m-%d')}")
-
+                    logger.info(f"⚠️ 所有类型推文获取结果为空，尝试只获取原创推文...")
+                    
+                    # 如果获取所有类型失败，尝试只获取原创推文
                     tweets_response = self.client.get_users_tweets(
                         id=user_id,
                         max_results=max_results,
                         tweet_fields=['created_at', 'public_metrics', 'attachments', 'author_id'],
-                        start_time=extended_start_time,
+                        media_fields=['url', 'preview_image_url', 'type'],
+                        expansions=['attachments.media_keys'],
+                        exclude=['retweets', 'replies'],  # 只在第二次尝试时排除
+                        start_time=start_time,
                         end_time=end_time
                     )
-
+                    
                     if tweets_response and tweets_response.data:
-                        logger.info(f"✅ 扩大时间范围后获取成功: {len(tweets_response.data)} 条")
-
-        except Exception as api_error:
-            logger.error(f"❌ API调用异常: {api_error}")
-            return []
-
-        if not tweets_response or not tweets_response.data:
-            logger.warning(f"ℹ️ 未找到 {username} 的推文")
-            logger.info(f"🔍 调试信息:")
-            logger.info(f"   - 用户ID: {user_id}")
-            logger.info(f"   - 时间范围: {start_time} 到 {end_time}")
-            logger.info(f"   - 时间跨度: {(end_time - start_time).days} 天")
-            logger.info(f"   - 最大结果数: {max_results}")
-            return []
-
-        logger.info(f"📥 API成功返回 {len(tweets_response.data)} 条推文，开始处理...")
-
-        # 处理媒体信息
-        media_dict = {}
-        if hasattr(tweets_response, 'includes') and tweets_response.includes and 'media' in tweets_response.includes:
-            for media in tweets_response.includes['media']:
-                media_dict[media.media_key] = {
-                    'type': media.type,
-                    'url': getattr(media, 'url', ''),
-                    'preview_url': getattr(media, 'preview_image_url', '')
-                }
-            logger.info(f"📎 处理了 {len(media_dict)} 个媒体附件")
-
-        result = []
-        processed_count = 0
-
-        for i, tweet in enumerate(tweets_response.data):
-            try:
-                processed_count += 1
-
-                # 处理媒体附件
-                media_urls = []
-                if hasattr(tweet, 'attachments') and tweet.attachments and 'media_keys' in tweet.attachments:
-                    for media_key in tweet.attachments['media_keys']:
-                        if media_key in media_dict:
-                            media_info = media_dict[media_key]
-                            media_urls.append({
-                                'type': media_info['type'],
-                                'url': media_info['url'],
-                                'preview_url': media_info['preview_url']
-                            })
-
-                # 获取互动数据
-                public_metrics = getattr(tweet, 'public_metrics', {})
-
-                # 🔴 关键修复5: 判断推文类型更准确
-                tweet_type = 'original'
-                is_retweet = False
-                is_reply = False
-
-                if hasattr(tweet, 'referenced_tweets') and tweet.referenced_tweets:
-                    ref_type = tweet.referenced_tweets[0].type
-                    if ref_type == 'retweeted':
-                        tweet_type = 'retweet'
-                        is_retweet = True
-                    elif ref_type == 'replied_to':
+                        logger.info(f"✅ 获取原创推文成功: {len(tweets_response.data)} 条")
+                    else:
+                        logger.warning(f"⚠️ 原创推文也获取失败，尝试扩大时间范围...")
+                        
+                        # 扩大时间范围再试一次
+                        extended_start_time = datetime.now(timezone.utc) - timedelta(days=30)
+                        logger.info(f"🔄 扩大时间范围到30天: {extended_start_time.strftime('%Y-%m-%d')} 到 {end_time.strftime('%Y-%m-%d')}")
+                        
+                        tweets_response = self.client.get_users_tweets(
+                            id=user_id,
+                            max_results=max_results,
+                            tweet_fields=['created_at', 'public_metrics', 'attachments', 'author_id'],
+                            start_time=extended_start_time,
+                            end_time=end_time
+                        )
+                        
+                        if tweets_response and tweets_response.data:
+                            logger.info(f"✅ 扩大时间范围后获取成功: {len(tweets_response.data)} 条")
+                        
+            except Exception as api_error:
+                logger.error(f"❌ API调用异常: {api_error}")
+                return []
+            
+            if not tweets_response or not tweets_response.data:
+                logger.warning(f"ℹ️ 未找到 {username} 的推文")
+                logger.info(f"🔍 调试信息:")
+                logger.info(f"   - 用户ID: {user_id}")
+                logger.info(f"   - 时间范围: {start_time} 到 {end_time}")
+                logger.info(f"   - 时间跨度: {(end_time - start_time).days} 天")
+                logger.info(f"   - 最大结果数: {max_results}")
+                return []
+            
+            logger.info(f"📥 API成功返回 {len(tweets_response.data)} 条推文，开始处理...")
+            
+            # 处理媒体信息
+            media_dict = {}
+            if hasattr(tweets_response, 'includes') and tweets_response.includes and 'media' in tweets_response.includes:
+                for media in tweets_response.includes['media']:
+                    media_dict[media.media_key] = {
+                        'type': media.type,
+                        'url': getattr(media, 'url', ''),
+                        'preview_url': getattr(media, 'preview_image_url', '')
+                    }
+                logger.info(f"📎 处理了 {len(media_dict)} 个媒体附件")
+            
+            result = []
+            processed_count = 0
+            
+            for i, tweet in enumerate(tweets_response.data):
+                try:
+                    processed_count += 1
+                    
+                    # 处理媒体附件
+                    media_urls = []
+                    if hasattr(tweet, 'attachments') and tweet.attachments and 'media_keys' in tweet.attachments:
+                        for media_key in tweet.attachments['media_keys']:
+                            if media_key in media_dict:
+                                media_info = media_dict[media_key]
+                                media_urls.append({
+                                    'type': media_info['type'],
+                                    'url': media_info['url'],
+                                    'preview_url': media_info['preview_url']
+                                })
+                    
+                    # 获取互动数据
+                    public_metrics = getattr(tweet, 'public_metrics', {})
+                    
+                    # 判断推文类型
+                    tweet_type = 'original'
+                    is_retweet = False
+                    is_reply = False
+                    
+                    if hasattr(tweet, 'referenced_tweets') and tweet.referenced_tweets:
+                        ref_type = tweet.referenced_tweets[0].type
+                        if ref_type == 'retweeted':
+                            tweet_type = 'retweet'
+                            is_retweet = True
+                        elif ref_type == 'replied_to':
+                            tweet_type = 'reply'
+                            is_reply = True
+                        elif ref_type == 'quoted':
+                            tweet_type = 'quote'
+                    
+                    # 检查是否为回复（即使没有referenced_tweets）
+                    if tweet.text and tweet.text.startswith('@'):
                         tweet_type = 'reply'
                         is_reply = True
-                    elif ref_type == 'quoted':
-                        tweet_type = 'quote'
-
-                # 检查是否为回复（即使没有referenced_tweets）
-                if tweet.text and tweet.text.startswith('@'):
-                    tweet_type = 'reply'
-                    is_reply = True
-
-                tweet_data = {
-                    'id': str(tweet.id),
-                    'content': tweet.text or '',
-                    'created_at': tweet.created_at.isoformat() if tweet.created_at else None,
-                    'likes': public_metrics.get('like_count', 0),
-                    'retweets': public_metrics.get('retweet_count', 0),
-                    'replies': public_metrics.get('reply_count', 0),
-                    'quotes': public_metrics.get('quote_count', 0),
-                    'author': username,
-                    'type': tweet_type,
-                    'media_urls': media_urls,
-                    'is_retweet': is_retweet,
-                    'is_reply': is_reply
-                }
-
-                result.append(tweet_data)
-
-                # 🔴 详细日志每条推文
-                logger.info(f"  📝 推文 {i+1}/{len(tweets_response.data)}: {tweet_type} | {tweet.created_at} | 👍{public_metrics.get('like_count', 0)} | {tweet.text[:60]}...")
-
-            except Exception as e:
-                logger.error(f"❌ 处理推文 {i+1} 时出错: {e}")
-                logger.error(f"   推文内容: {getattr(tweet, 'text', 'N/A')[:100]}")
-                continue
-
-        logger.info(f"✅ 成功处理 {username} 的推文:")
-        logger.info(f"   📊 API返回: {len(tweets_response.data)} 条")
-        logger.info(f"   ✅ 成功处理: {len(result)} 条")
-        logger.info(f"   ❌ 处理失败: {len(tweets_response.data) - len(result)} 条")
-
-        # 🔴 关键修复6: 按类型统计推文
-        type_stats = {}
-        for tweet in result:
-            tweet_type = tweet['type']
-            type_stats[tweet_type] = type_stats.get(tweet_type, 0) + 1
-
-        logger.info(f"   📊 推文类型统计: {type_stats}")
-
-        # 显示最新几条推文的详细信息
-        for i, tweet in enumerate(result[:3]):
-            logger.info(f"   🔍 推文样本 {i+1}: [{tweet['type']}] {tweet['created_at']} | 👍{tweet['likes']} 🔄{tweet['retweets']} | {tweet['content'][:80]}...")
-
-        return result
-
-    except tweepy.Unauthorized:
-        logger.error(f"❌ 无权访问用户 {username} 的推文，可能是私人账户")
-        return []
-    except tweepy.NotFound:
-        logger.error(f"❌ 用户 {username} 不存在")
-        return []
-    except tweepy.TooManyRequests:
-        logger.error(f"❌ API请求过于频繁，请稍后再试")
-        self.api_working = False
-        return []
-    except Exception as e:
-        logger.error(f"❌ 获取 {username} 推文时发生意外错误: {e}")
-        logger.error(f"   错误类型: {type(e).__name__}")
-        logger.error(f"   详细信息: {str(e)}")
-        return []
+                    
+                    tweet_data = {
+                        'id': str(tweet.id),
+                        'content': tweet.text or '',
+                        'created_at': tweet.created_at.isoformat() if tweet.created_at else None,
+                        'likes': public_metrics.get('like_count', 0),
+                        'retweets': public_metrics.get('retweet_count', 0),
+                        'replies': public_metrics.get('reply_count', 0),
+                        'quotes': public_metrics.get('quote_count', 0),
+                        'author': username,
+                        'type': tweet_type,
+                        'media_urls': media_urls,
+                        'is_retweet': is_retweet,
+                        'is_reply': is_reply
+                    }
+                    
+                    result.append(tweet_data)
+                    
+                    # 详细日志每条推文
+                    logger.info(f"  📝 推文 {i+1}/{len(tweets_response.data)}: {tweet_type} | {tweet.created_at} | 👍{public_metrics.get('like_count', 0)} | {tweet.text[:60]}...")
+                    
+                except Exception as e:
+                    logger.error(f"❌ 处理推文 {i+1} 时出错: {e}")
+                    logger.error(f"   推文内容: {getattr(tweet, 'text', 'N/A')[:100]}")
+                    continue
+            
+            logger.info(f"✅ 成功处理 {username} 的推文:")
+            logger.info(f"   📊 API返回: {len(tweets_response.data)} 条")
+            logger.info(f"   ✅ 成功处理: {len(result)} 条")
+            logger.info(f"   ❌ 处理失败: {len(tweets_response.data) - len(result)} 条")
+            
+            # 按类型统计推文
+            type_stats = {}
+            for tweet in result:
+                tweet_type = tweet['type']
+                type_stats[tweet_type] = type_stats.get(tweet_type, 0) + 1
+            
+            logger.info(f"   📊 推文类型统计: {type_stats}")
+            
+            # 显示最新几条推文的详细信息
+            for i, tweet in enumerate(result[:3]):
+                logger.info(f"   🔍 推文样本 {i+1}: [{tweet['type']}] {tweet['created_at']} | 👍{tweet['likes']} 🔄{tweet['retweets']} | {tweet['content'][:80]}...")
+            
+            return result
+            
+        except tweepy.Unauthorized:
+            logger.error(f"❌ 无权访问用户 {username} 的推文，可能是私人账户")
+            return []
+        except tweepy.NotFound:
+            logger.error(f"❌ 用户 {username} 不存在")
+            return []
+        except tweepy.TooManyRequests:
+            logger.error(f"❌ API请求过于频繁，请稍后再试")
+            self.api_working = False
+            return []
+        except Exception as e:
+            logger.error(f"❌ 获取 {username} 推文时发生意外错误: {e}")
+            logger.error(f"   错误类型: {type(e).__name__}")
+            logger.error(f"   详细信息: {str(e)}")
+            return []
 
 class ResearcherManager:
     def __init__(self):
@@ -1505,39 +1525,39 @@ def fetch_historical_content(researcher_id):
         start_date = data.get('start_date')
         end_date = data.get('end_date', datetime.now().strftime('%Y-%m-%d'))
         max_results = data.get('max_results', 50)
-        
+
         conn = sqlite3.connect('research_platform.db')
         cursor = conn.cursor()
-        
+
         cursor.execute('SELECT name, x_account FROM researchers WHERE id = ?', (researcher_id,))
         researcher = cursor.fetchone()
-        
+
         if not researcher:
             conn.close()
             return jsonify({'error': 'Researcher not found'}), 404
-        
+
         name, x_account = researcher
-        
+
         # 时间范围处理
         if start_date:
             start_time = datetime.strptime(start_date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
         else:
             start_time = datetime.now(timezone.utc) - timedelta(days=7)  # 改为7天
-            
+
         end_time = datetime.strptime(end_date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
-        
+
         logger.info(f"🎯 开始抓取 {name} 的历史内容")
         logger.info(f"📅 时间范围: {start_time.strftime('%Y-%m-%d %H:%M:%S')} 到 {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
         logger.info(f"⏱️ 时间跨度: {(end_time - start_time).days} 天")
         logger.info(f"📊 最大结果数: {max_results}")
         logger.info(f"🐦 X账号: {x_account}")
-        
+
         # 调用修复后的推文获取方法
         tweets = []
         if twitter_api:
             logger.info(f"🔄 开始调用Twitter API...")
             tweets = twitter_api.get_user_tweets(
-                x_account, 
+                x_account,
                 max_results=max_results,
                 start_time=start_time,
                 end_time=end_time
@@ -1545,32 +1565,32 @@ def fetch_historical_content(researcher_id):
             logger.info(f"📥 Twitter API调用完成，返回 {len(tweets)} 条推文")
         else:
             logger.error(f"❌ Twitter API未初始化")
-            
+
         new_content_count = 0
         duplicate_count = 0
         error_count = 0
-        
+
         if tweets:
             logger.info(f"💾 开始保存推文到数据库...")
-            
+
             for i, tweet in enumerate(tweets):
                 try:
                     # 存储媒体URL为JSON字符串
                     media_urls_json = json.dumps(tweet.get('media_urls', []))
-                    
+
                     # 先检查是否已存在
                     cursor.execute('SELECT id FROM x_content WHERE tweet_id = ?', (tweet['id'],))
                     existing = cursor.fetchone()
-                    
+
                     if existing:
                         duplicate_count += 1
                         logger.debug(f"  ⚠️ 推文 {tweet['id']} 已存在，跳过")
                         continue
-                    
+
                     # 插入新记录
                     cursor.execute('''
-                        INSERT INTO x_content 
-                        (researcher_id, tweet_id, content, content_type, likes_count, retweets_count, 
+                        INSERT INTO x_content
+                        (researcher_id, tweet_id, content, content_type, likes_count, retweets_count,
                          replies_count, created_at, is_historical, media_urls)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
                     ''', (
@@ -1578,33 +1598,33 @@ def fetch_historical_content(researcher_id):
                         tweet['likes'], tweet['retweets'], tweet['replies'],
                         tweet['created_at'], media_urls_json
                     ))
-                    
+
                     new_content_count += 1
                     logger.debug(f"  ✅ 保存推文 {i+1}: [{tweet.get('type', 'text')}] {tweet['created_at']} | {tweet['content'][:50]}...")
-                    
+
                 except Exception as e:
                     error_count += 1
                     logger.error(f"❌ 保存推文 {i+1} 失败: {e}")
                     logger.error(f"   推文ID: {tweet.get('id', 'N/A')}")
                     logger.error(f"   推文内容: {tweet.get('content', 'N/A')[:100]}")
-            
+
             conn.commit()
             logger.info(f"💾 数据库保存完成")
         else:
             logger.warning(f"⚠️ 未获取到任何推文数据")
-        
+
         conn.close()
-        
+
         period = f"{start_date or '7天前'} 到 {end_date}"
-        
+
         # 详细的结果消息
         if tweets:
             result_message = f'✅ {name} 抓取完成: API返回{len(tweets)}条，新增{new_content_count}条，重复{duplicate_count}条，错误{error_count}条'
         else:
             result_message = f'⚠️ {name} 抓取完成但未获取到推文 - 请检查时间范围或账户状态'
-        
+
         logger.info(f"🎉 {result_message}")
-        
+
         return jsonify({
             'message': result_message,
             'new_content_count': new_content_count,
@@ -1622,7 +1642,7 @@ def fetch_historical_content(researcher_id):
                 'api_available': twitter_api is not None
             }
         })
-        
+
     except Exception as e:
         logger.error(f"💥 抓取历史内容时发生严重错误: {e}")
         logger.error(f"   错误类型: {type(e).__name__}")
