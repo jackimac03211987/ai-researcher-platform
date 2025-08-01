@@ -2018,11 +2018,25 @@
         }
 
         function renderSpecialFocus() {
+            console.log('开始渲染特别关注页面');
             dynamicContent.innerHTML = `
                 <div class="loading" id="special-loading">
                     <div class="spinner"></div>
                 </div>
                 <div id="special-container" style="display: none;">
+                    <div class="controls" style="margin-bottom: 2rem;">
+                        <div style="display: flex; gap: 1rem; align-items: center;">
+                            <h3 style="margin: 0; color: #ffc107;">
+                                <i class="fas fa-star"></i> 特别关注的研究者
+                            </h3>
+                            <button class="btn btn-secondary" onclick="loadSpecialFocus()">
+                                <i class="fas fa-sync"></i> 刷新
+                            </button>
+                            <button class="btn btn-secondary" onclick="updateAllUserInfo()">
+                                <i class="fas fa-users-cog"></i> 更新关注者数据
+                            </button>
+                        </div>
+                    </div>
                     <div class="content-grid" id="special-grid">
                         <!-- 特别关注的研究者卡片 -->
                     </div>
@@ -2034,12 +2048,19 @@
 
         async function loadSpecialFocus() {
             try {
+                console.log('正在加载特别关注列表');
+                updateStatus('正在加载特别关注列表...', 'warning');
+                
+                document.getElementById('special-loading').style.display = 'flex';
+                document.getElementById('special-container').style.display = 'none';
+                
                 const specialResearchers = await apiCall('/api/special_focus');
+                console.log('特别关注列表加载结果:', specialResearchers);
                 
                 document.getElementById('special-loading').style.display = 'none';
                 document.getElementById('special-container').style.display = 'block';
                 
-                if (specialResearchers.length === 0) {
+                if (!Array.isArray(specialResearchers) || specialResearchers.length === 0) {
                     document.getElementById('special-grid').innerHTML = `
                         <div style="grid-column: 1/-1; text-align: center; padding: 4rem;">
                             <div style="font-size: 4rem; color: rgba(255,255,255,0.3); margin-bottom: 1rem;">⭐</div>
@@ -2050,11 +2071,12 @@
                             </button>
                         </div>
                     `;
+                    updateStatus('暂无特别关注的研究者', 'warning');
                     return;
                 }
 
                 document.getElementById('special-grid').innerHTML = specialResearchers.map(researcher => `
-                    <div class="researcher-card glass glass-hover" style="cursor: pointer;" 
+                    <div class="researcher-card glass glass-hover special-focus-card" style="cursor: pointer;" 
                          onclick="showHistoricalContent(${researcher.id})">
                         <div class="researcher-header">
                             <div class="researcher-avatar">${getInitials(researcher.name)}</div>
@@ -2067,25 +2089,30 @@
                             </span>
                         </div>
                         <div class="researcher-meta">
-                            <span><i class="fas fa-map-marker-alt"></i> ${researcher.country}</span>
-                            <span><i class="fas fa-building"></i> ${researcher.company}</span>
+                            <span><i class="fas fa-map-marker-alt"></i> ${researcher.country || '未知'}</span>
+                            <span><i class="fas fa-building"></i> ${researcher.company || '未知'}</span>
                         </div>
-                        <div class="researcher-research">${researcher.research_focus}</div>
+                        <div class="researcher-research">${researcher.research_focus || '未知'}</div>
                         <div class="researcher-stats">
-                            <span><strong>${researcher.followers_count}</strong> 关注者</span>
-                            <span><strong>${researcher.following_count}</strong> 正在关注</span>
+                            <span><strong>${researcher.followers_count || '0'}</strong> 关注者</span>
+                            <span><strong>${researcher.following_count || '0'}</strong> 正在关注</span>
                             ${researcher.is_monitoring ? '<span style="color: #22c55e;"><i class="fas fa-circle"></i> 监控中</span>' : ''}
                         </div>
                         
-                        <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
-                            <button class="btn btn-primary" onclick="event.stopPropagation(); showHistoricalModal(${researcher.id})">
+                        <div style="margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                            <button class="btn btn-primary" onclick="event.stopPropagation(); showHistoricalModal(${researcher.id})" style="flex: 1;">
                                 <i class="fas fa-history"></i> 抓取历史
                             </button>
-                            <button class="btn btn-secondary" onclick="event.stopPropagation(); showHistoricalContent(${researcher.id})">
+                            <button class="btn btn-secondary" onclick="event.stopPropagation(); showHistoricalContent(${researcher.id})" style="flex: 1;">
                                 <i class="fas fa-eye"></i> 查看历史
                             </button>
-                            <button class="btn btn-secondary" onclick="event.stopPropagation(); exportToWord(${researcher.id})">
+                        </div>
+                        <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem;">
+                            <button class="btn btn-secondary" onclick="event.stopPropagation(); exportToWord(${researcher.id})" style="flex: 1;">
                                 <i class="fas fa-download"></i> 导出Word
+                            </button>
+                            <button class="btn btn-secondary" onclick="event.stopPropagation(); updateUserInfo(${researcher.id})" style="flex: 1;">
+                                <i class="fas fa-sync"></i> 更新数据
                             </button>
                         </div>
                     </div>
@@ -2094,9 +2121,24 @@
                 // 更新导航中的特别关注数量
                 document.getElementById('special-count').textContent = specialResearchers.length;
                 
+                updateStatus(`加载了 ${specialResearchers.length} 位特别关注的研究者`, 'success');
+                
             } catch (error) {
                 console.error('加载特别关注失败:', error);
-                updateStatus('加载特别关注失败', 'error');
+                updateStatus('加载特别关注失败: ' + error.message, 'error');
+                
+                document.getElementById('special-loading').style.display = 'none';
+                document.getElementById('special-container').style.display = 'block';
+                document.getElementById('special-grid').innerHTML = `
+                    <div style="grid-column: 1/-1; text-align: center; padding: 4rem;">
+                        <div style="font-size: 4rem; color: rgba(239, 68, 68, 0.5); margin-bottom: 1rem;">❌</div>
+                        <h3 style="margin-bottom: 1rem; color: #ef4444;">加载失败</h3>
+                        <p style="color: rgba(255,255,255,0.7); margin-bottom: 2rem;">无法加载特别关注列表</p>
+                        <button class="btn btn-primary" onclick="loadSpecialFocus()">
+                            <i class="fas fa-sync"></i> 重试
+                        </button>
+                    </div>
+                `;
             }
         }
 
@@ -2336,6 +2378,63 @@
 当前视图: ${currentView}
 网格元素: ${gridElement ? '存在' : '不存在'}
 详细信息请查看浏览器控制台`);
+        }
+
+        // 更新用户信息相关函数
+        async function updateUserInfo(researcherId) {
+            try {
+                updateStatus('正在更新用户信息...', 'warning');
+                
+                const result = await apiCall(`/api/update_user_info/${researcherId}`, {
+                    method: 'POST'
+                });
+                
+                updateStatus(result.message, 'success');
+                
+                // 如果当前在特别关注页面，刷新显示
+                if (currentView === 'special-focus') {
+                    loadSpecialFocus();
+                } else if (currentView === 'researchers') {
+                    loadResearchers(currentPage, searchQuery).then(() => {
+                        document.getElementById('researchers-grid').innerHTML = renderResearcherCards();
+                    });
+                }
+                
+            } catch (error) {
+                console.error('更新用户信息失败:', error);
+                updateStatus('更新用户信息失败: ' + error.message, 'error');
+            }
+        }
+
+        async function updateAllUserInfo() {
+            const confirmed = confirm('确定要更新所有研究者的关注者数据吗？\n\n这可能需要几分钟时间，请耐心等待。');
+            if (!confirmed) return;
+            
+            try {
+                updateStatus('正在批量更新用户信息，请耐心等待...', 'warning');
+                
+                const result = await apiCall('/api/update_all_user_info', {
+                    method: 'POST'
+                });
+                
+                updateStatus(result.message, 'success');
+                
+                // 刷新当前页面
+                if (currentView === 'special-focus') {
+                    loadSpecialFocus();
+                } else if (currentView === 'researchers') {
+                    loadResearchers(currentPage, searchQuery).then(() => {
+                        document.getElementById('researchers-grid').innerHTML = renderResearcherCards();
+                    });
+                }
+                
+                // 刷新分析数据
+                await loadAnalytics();
+                
+            } catch (error) {
+                console.error('批量更新用户信息失败:', error);
+                updateStatus('批量更新失败: ' + error.message, 'error');
+            }
         }
                 
             } catch (error) {
