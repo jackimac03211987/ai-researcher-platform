@@ -62,87 +62,140 @@ def insert_researcher_batch(cursor, batch_data, error_details):
 
     return added_count
 
-# 完整的TwitterAPI类 - 统一所有功能
+# 完整的调试版TwitterAPI类 - 替换你现有的TwitterAPI类
 class TwitterAPI:
     def __init__(self):
         self.client = None
         self.api_working = False
         self.connection_tested = False
 
-        TWITTER_BEARER_TOKEN = os.environ.get('TWITTER_BEARER_TOKEN')
-        if TWITTER_BEARER_TOKEN:
+        # 获取Bearer Token
+        bearer_token = os.environ.get('TWITTER_BEARER_TOKEN')
+
+        logger.info(f"🔍 初始化TwitterAPI...")
+        logger.info(f"🔑 Bearer Token状态: {'存在' if bearer_token else '不存在'}")
+
+        if bearer_token:
+            logger.info(f"🔑 Token长度: {len(bearer_token)} 字符")
+            logger.info(f"🔑 Token前缀: {bearer_token[:20]}...")
+
             try:
                 self.client = tweepy.Client(
-                    bearer_token=TWITTER_BEARER_TOKEN,
+                    bearer_token=bearer_token,
                     wait_on_rate_limit=False
                 )
-                logger.info("✅ Twitter API客户端初始化成功")
+                logger.info("✅ tweepy.Client 创建成功")
+
+                # 立即测试连接
+                self.test_connection()
+
             except Exception as e:
-                logger.error(f"❌ Twitter API初始化失败: {e}")
+                logger.error(f"❌ tweepy.Client 创建失败: {e}")
                 self.client = None
         else:
+            logger.error("❌ TWITTER_BEARER_TOKEN 环境变量未设置")
             self.client = None
-            logger.warning("⚠️ Twitter Bearer Token未配置")
 
     def test_connection(self):
-        """测试API连接 - 使用正确的用户"""
-        if self.connection_tested:
-            return self.api_working
+        """详细的连接测试 - 包含完整日志"""
+        logger.info("🧪 开始API连接测试...")
 
-        try:
-            if self.client:
-                # 使用karpathy而不是twitter（twitter账户被暂停）
-                user = self.client.get_user(username='karpathy')
-                if user and user.data:
-                    logger.info("🔗 Twitter API连接测试成功")
+        # 重置状态
+        self.connection_tested = True  # 标记为已测试
+        self.api_working = False       # 先假设失败
+
+        if not self.client:
+            logger.error("❌ 连接测试失败: 客户端未初始化")
+            return False
+
+        # 测试多个用户，找到一个可用的
+        test_users = ['karpathy', 'elonmusk', 'openai', 'github']
+
+        for i, username in enumerate(test_users, 1):
+            try:
+                logger.info(f"🔍 测试用户 {i}/{len(test_users)}: @{username}")
+
+                # 进行API调用
+                response = self.client.get_user(username=username)
+
+                logger.info(f"📡 API响应状态: {response is not None}")
+
+                if response and hasattr(response, 'data') and response.data:
+                    user_data = response.data
+                    logger.info(f"✅ 测试成功! 用户: {user_data.name} (@{user_data.username})")
+                    logger.info(f"✅ 用户ID: {user_data.id}")
+
                     self.api_working = True
-                    self.connection_tested = True
                     return True
                 else:
-                    logger.error("❌ Twitter API测试失败")
-                    self.api_working = False
-                    self.connection_tested = True
-            else:
-                self.api_working = False
-                self.connection_tested = True
-        except Exception as e:
-            logger.error(f"❌ API连接测试失败: {e}")
-            self.api_working = False
-            self.connection_tested = True
-        return self.api_working
+                    logger.warning(f"⚠️ 用户 @{username} 响应为空")
+
+            except tweepy.Unauthorized as e:
+                logger.error(f"❌ 认证失败 (@{username}): {e}")
+                return False  # 认证问题应该立即返回
+
+            except tweepy.NotFound as e:
+                logger.warning(f"⚠️ 用户不存在 (@{username}): {e}")
+                continue  # 尝试下一个用户
+
+            except tweepy.Forbidden as e:
+                logger.warning(f"⚠️ 访问被禁止 (@{username}): {e}")
+                continue  # 尝试下一个用户
+
+            except Exception as e:
+                logger.error(f"❌ 未知错误 (@{username}): {type(e).__name__}: {e}")
+                continue  # 尝试下一个用户
+
+        # 所有用户都测试失败
+        logger.error("❌ 所有测试用户都失败")
+        self.api_working = False
+        return False
 
     def ensure_connection(self):
-        """确保API连接可用"""
+        """确保连接可用"""
         if not self.connection_tested:
-            self.test_connection()
+            logger.info("🔄 强制重新测试连接...")
+            return self.test_connection()
+
+        logger.info(f"📊 连接状态: {'可用' if self.api_working else '不可用'}")
         return self.api_working
 
     def get_user_info(self, username):
-        """获取用户基本信息 - 修复版"""
+        """获取用户信息 - 调试版"""
+        logger.info(f"👤 开始获取用户信息: {username}")
+
         if not self.client:
-            logger.warning(f"Twitter客户端未配置，无法获取 {username} 的用户信息")
+            logger.error("❌ 客户端未初始化")
+            return None
+
+        # 检查连接
+        if not self.ensure_connection():
+            logger.error("❌ API连接不可用")
             return None
 
         try:
             # 清理用户名
-            username = username.replace('@', '').strip()
-            if not username:
-                logger.warning("用户名为空")
+            clean_username = username.replace('@', '').strip()
+            logger.info(f"🧹 清理后的用户名: {clean_username}")
+
+            if not clean_username:
+                logger.error("❌ 用户名为空")
                 return None
 
-            logger.info(f"🔍 正在获取用户信息: {username}")
-
-            # 使用正确的API调用
-            user_response = self.client.get_user(
-                username=username,
+            # API调用
+            logger.info(f"📡 调用API获取用户信息...")
+            response = self.client.get_user(
+                username=clean_username,
                 user_fields=['public_metrics', 'profile_image_url', 'description', 'verified']
             )
 
-            if not user_response or not user_response.data:
-                logger.warning(f"❌ Twitter用户 {username} 不存在或无法访问")
+            logger.info(f"📡 API响应: {response is not None}")
+
+            if not response or not response.data:
+                logger.error(f"❌ 用户 {clean_username} 不存在或无法访问")
                 return None
 
-            user = user_response.data
+            user = response.data
             public_metrics = getattr(user, 'public_metrics', {})
 
             user_info = {
@@ -158,107 +211,140 @@ class TwitterAPI:
                 'verified': getattr(user, 'verified', False)
             }
 
-            logger.info(f"✅ 成功获取 {username} 的信息: {user_info['followers_count']} 关注者")
+            logger.info(f"✅ 成功获取用户信息: {user_info['name']} - {user_info['followers_count']} 关注者")
             return user_info
 
-        except tweepy.Unauthorized:
-            logger.error(f"❌ 无权访问用户 {username}，可能是私人账户或API权限不足")
+        except tweepy.Unauthorized as e:
+            logger.error(f"❌ 认证失败: {e}")
             return None
-        except tweepy.NotFound:
-            logger.error(f"❌ 用户 {username} 不存在")
+        except tweepy.NotFound as e:
+            logger.error(f"❌ 用户不存在: {e}")
             return None
-        except tweepy.TooManyRequests:
-            logger.error(f"❌ API请求过于频繁，请稍后再试")
+        except tweepy.Forbidden as e:
+            logger.error(f"❌ 访问被禁止: {e}")
             return None
         except Exception as e:
-            logger.error(f"❌ 获取 {username} 用户信息时发生错误: {e}")
+            logger.error(f"❌ 未知错误: {type(e).__name__}: {e}")
             return None
 
     def get_user_tweets(self, username, max_results=10, start_time=None, end_time=None):
-        """获取用户推文 - 修复版"""
+        """获取用户推文 - 调试版"""
+        logger.info(f"🐦 开始获取推文: {username} (最多{max_results}条)")
+
         if not self.client:
-            logger.warning(f"Twitter客户端未配置，无法获取 {username} 的推文")
+            logger.error("❌ 客户端未初始化")
+            return []
+
+        # 检查连接
+        if not self.ensure_connection():
+            logger.error("❌ API连接不可用")
             return []
 
         try:
             # 清理用户名
-            username = username.replace('@', '').strip()
-            if not username:
-                logger.warning("用户名为空")
-                return []
-
-            logger.info(f"🐦 正在获取推文: {username}")
+            clean_username = username.replace('@', '').strip()
+            logger.info(f"🧹 清理后的用户名: {clean_username}")
 
             # 第一步：获取用户ID
-            user_response = self.client.get_user(username=username)
+            logger.info("📡 获取用户ID...")
+            user_response = self.client.get_user(username=clean_username)
+
             if not user_response or not user_response.data:
-                logger.warning(f"❌ 用户 {username} 不存在或无法访问")
+                logger.error(f"❌ 用户 {clean_username} 不存在")
                 return []
 
             user_id = user_response.data.id
             logger.info(f"✅ 用户ID: {user_id}")
 
             # 第二步：获取推文
-            try:
-                # 构建请求参数
-                kwargs = {
-                    'id': user_id,
-                    'max_results': min(max_results, 100),
-                    'tweet_fields': ['created_at', 'public_metrics'],
-                    'exclude': ['retweets', 'replies']  # 排除转发和回复，只获取原创推文
+            logger.info("📡 获取推文列表...")
+
+            kwargs = {
+                'id': user_id,
+                'max_results': min(max_results, 100),
+                'tweet_fields': ['created_at', 'public_metrics'],
+                'exclude': ['retweets', 'replies']
+            }
+
+            if start_time:
+                kwargs['start_time'] = start_time
+            if end_time:
+                kwargs['end_time'] = end_time
+
+            logger.info(f"📡 请求参数: {kwargs}")
+
+            tweets_response = self.client.get_users_tweets(**kwargs)
+
+            if not tweets_response or not tweets_response.data:
+                logger.warning(f"⚠️ 用户 {clean_username} 没有可用的推文")
+                return []
+
+            # 处理推文数据
+            result = []
+            for tweet in tweets_response.data:
+                public_metrics = getattr(tweet, 'public_metrics', {})
+                tweet_data = {
+                    'id': str(tweet.id),
+                    'content': tweet.text or '',
+                    'created_at': tweet.created_at.isoformat() if hasattr(tweet, 'created_at') and tweet.created_at else None,
+                    'likes': public_metrics.get('like_count', 0),
+                    'retweets': public_metrics.get('retweet_count', 0),
+                    'replies': public_metrics.get('reply_count', 0),
+                    'quotes': public_metrics.get('quote_count', 0),
+                    'author': clean_username,
+                    'type': 'original',
+                    'media_urls': [],
+                    'is_retweet': False,
+                    'is_reply': False
                 }
-                
-                if start_time:
-                    kwargs['start_time'] = start_time
-                if end_time:
-                    kwargs['end_time'] = end_time
+                result.append(tweet_data)
 
-                tweets_response = self.client.get_users_tweets(**kwargs)
+            logger.info(f"✅ 成功获取 {len(result)} 条推文")
+            return result
 
-                if not tweets_response or not tweets_response.data:
-                    logger.info(f"⚠️ 用户 {username} 在指定时间范围内没有推文")
-                    return []
-
-                result = []
-                for tweet in tweets_response.data:
-                    public_metrics = getattr(tweet, 'public_metrics', {})
-                    result.append({
-                        'id': str(tweet.id),
-                        'content': tweet.text or '',
-                        'created_at': tweet.created_at.isoformat() if tweet.created_at else None,
-                        'likes': public_metrics.get('like_count', 0),
-                        'retweets': public_metrics.get('retweet_count', 0),
-                        'replies': public_metrics.get('reply_count', 0),
-                        'quotes': public_metrics.get('quote_count', 0),
-                        'author': username,
-                        'type': 'original',
-                        'media_urls': [],
-                        'is_retweet': False,
-                        'is_reply': False
-                    })
-                
-                logger.info(f"✅ 成功获取 {username} 的 {len(result)} 条推文")
-                return result
-
-            except tweepy.Forbidden as e:
-                logger.error(f"❌ 无权访问 {username} 的推文: {e}")
-                return []
-            except Exception as e:
-                logger.error(f"❌ 获取推文时发生错误: {e}")
-                return []
-
-        except tweepy.Unauthorized:
-            logger.error(f"❌ 无权访问用户 {username}，可能是私人账户")
+        except tweepy.Unauthorized as e:
+            logger.error(f"❌ 认证失败: {e}")
             return []
-        except tweepy.NotFound:
-            logger.error(f"❌ 用户 {username} 不存在")
+        except tweepy.NotFound as e:
+            logger.error(f"❌ 用户不存在: {e}")
             return []
-        except tweepy.TooManyRequests:
-            logger.error(f"❌ API请求过于频繁，请稍后再试")
+        except tweepy.Forbidden as e:
+            logger.error(f"❌ 访问被禁止: {e}")
             return []
         except Exception as e:
-            logger.error(f"❌ 获取 {username} 推文时发生意外错误: {e}")
+            logger.error(f"❌ 未知错误: {type(e).__name__}: {e}")
             return []
+
+# 添加一个调试端点
+@app.route('/api/debug_twitter_status')
+def debug_twitter_status():
+    """调试Twitter API状态"""
+    try:
+        debug_info = {
+            'timestamp': datetime.now().isoformat(),
+            'bearer_token': {
+                'exists': 'TWITTER_BEARER_TOKEN' in os.environ,
+                'length': len(os.environ.get('TWITTER_BEARER_TOKEN', '')) if 'TWITTER_BEARER_TOKEN' in os.environ else 0
+            },
+            'twitter_api': {
+                'object_exists': twitter_api is not None,
+                'client_exists': twitter_api and hasattr(twitter_api, 'client') and twitter_api.client is not None,
+                'connection_tested': twitter_api and getattr(twitter_api, 'connection_tested', False),
+                'api_working': twitter_api and getattr(twitter_api, 'api_working', False)
+            }
+        }
+
+        # 强制重新测试连接
+        if twitter_api and twitter_api.client:
+            debug_info['force_test_result'] = twitter_api.test_connection()
+
+        return jsonify(debug_info)
+
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 500
 
 class ResearcherManager:
     def __init__(self):
@@ -1578,6 +1664,36 @@ def test_twitter_simple():
             'error_type': type(e).__name__
         }), 500
 
+@app.route('/api/debug_twitter_status')
+def debug_twitter_status():
+    """调试Twitter API状态"""
+    try:
+        debug_info = {
+            'timestamp': datetime.now().isoformat(),
+            'bearer_token': {
+                'exists': 'TWITTER_BEARER_TOKEN' in os.environ,
+                'length': len(os.environ.get('TWITTER_BEARER_TOKEN', '')) if 'TWITTER_BEARER_TOKEN' in os.environ else 0
+            },
+            'twitter_api': {
+                'object_exists': twitter_api is not None,
+                'client_exists': twitter_api and hasattr(twitter_api, 'client') and twitter_api.client is not None,
+                'connection_tested': twitter_api and getattr(twitter_api, 'connection_tested', False),
+                'api_working': twitter_api and getattr(twitter_api, 'api_working', False)
+            }
+        }
+
+        # 强制重新测试连接
+        if twitter_api and twitter_api.client:
+            debug_info['force_test_result'] = twitter_api.test_connection()
+
+        return jsonify(debug_info)
+
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 500
+                
 if __name__ == '__main__':
     logger.info("🚀 AI研究者X内容学习平台启动中...")
     logger.info(f"📊 系统容量: 最大支持 5000 位研究者监控")
