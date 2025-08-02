@@ -62,12 +62,13 @@ def insert_researcher_batch(cursor, batch_data, error_details):
 
     return added_count
 
-# 完整的调试版TwitterAPI类 - 替换你现有的TwitterAPI类
+# 优化的TwitterAPI类 - 修复重复路由和API限制问题
 class TwitterAPI:
     def __init__(self):
         self.client = None
         self.api_working = False
         self.connection_tested = False
+        self.rate_limit_hit = False
 
         # 获取Bearer Token
         bearer_token = os.environ.get('TWITTER_BEARER_TOKEN')
@@ -82,12 +83,12 @@ class TwitterAPI:
             try:
                 self.client = tweepy.Client(
                     bearer_token=bearer_token,
-                    wait_on_rate_limit=False
+                    wait_on_rate_limit=True  # 启用自动等待
                 )
                 logger.info("✅ tweepy.Client 创建成功")
 
-                # 立即测试连接
-                self.test_connection()
+                # 延迟测试连接，避免启动时的API限制
+                # self.test_connection()  # 注释掉立即测试，改为懒加载
 
             except Exception as e:
                 logger.error(f"❌ tweepy.Client 创建失败: {e}")
@@ -97,80 +98,86 @@ class TwitterAPI:
             self.client = None
 
     def test_connection(self):
-        """详细的连接测试 - 包含完整日志"""
+        """改进的连接测试 - 处理API限制"""
         logger.info("🧪 开始API连接测试...")
 
         # 重置状态
-        self.connection_tested = True  # 标记为已测试
-        self.api_working = False       # 先假设失败
+        self.connection_tested = True
+        self.api_working = False
 
         if not self.client:
             logger.error("❌ 连接测试失败: 客户端未初始化")
             return False
 
-        # 测试多个用户，找到一个可用的
-        test_users = ['karpathy', 'elonmusk', 'openai', 'github']
+        # 如果之前已经遇到rate limit，暂时跳过测试
+        if self.rate_limit_hit:
+            logger.warning("⚠️ 之前遇到API限制，跳过连接测试")
+            return False
 
-        for i, username in enumerate(test_users, 1):
-            try:
-                logger.info(f"🔍 测试用户 {i}/{len(test_users)}: @{username}")
+        # 测试一个简单的用户
+        test_username = 'github'  # 使用一个稳定的账户
 
-                # 进行API调用
-                response = self.client.get_user(username=username)
+        try:
+            logger.info(f"🔍 测试用户: @{test_username}")
 
-                logger.info(f"📡 API响应状态: {response is not None}")
+            # 进行API调用
+            response = self.client.get_user(username=test_username)
 
-                if response and hasattr(response, 'data') and response.data:
-                    user_data = response.data
-                    logger.info(f"✅ 测试成功! 用户: {user_data.name} (@{user_data.username})")
-                    logger.info(f"✅ 用户ID: {user_data.id}")
+            logger.info(f"📡 API响应状态: {response is not None}")
 
-                    self.api_working = True
-                    return True
-                else:
-                    logger.warning(f"⚠️ 用户 @{username} 响应为空")
+            if response and hasattr(response, 'data') and response.data:
+                user_data = response.data
+                logger.info(f"✅ 测试成功! 用户: {user_data.name} (@{user_data.username})")
+                
+                self.api_working = True
+                return True
+            else:
+                logger.warning(f"⚠️ 用户 @{test_username} 响应为空")
+                return False
 
-            except tweepy.Unauthorized as e:
-                logger.error(f"❌ 认证失败 (@{username}): {e}")
-                return False  # 认证问题应该立即返回
+        except tweepy.TooManyRequests as e:
+            logger.warning(f"⚠️ API限制: {e}")
+            self.rate_limit_hit = True
+            # 设置一个标志表示API目前不可用，但客户端配置正确
+            self.api_working = False
+            return False
 
-            except tweepy.NotFound as e:
-                logger.warning(f"⚠️ 用户不存在 (@{username}): {e}")
-                continue  # 尝试下一个用户
+        except tweepy.Unauthorized as e:
+            logger.error(f"❌ 认证失败: {e}")
+            return False
 
-            except tweepy.Forbidden as e:
-                logger.warning(f"⚠️ 访问被禁止 (@{username}): {e}")
-                continue  # 尝试下一个用户
+        except tweepy.NotFound as e:
+            logger.warning(f"⚠️ 用户不存在: {e}")
+            return False
 
-            except Exception as e:
-                logger.error(f"❌ 未知错误 (@{username}): {type(e).__name__}: {e}")
-                continue  # 尝试下一个用户
-
-        # 所有用户都测试失败
-        logger.error("❌ 所有测试用户都失败")
-        self.api_working = False
-        return False
+        except Exception as e:
+            logger.error(f"❌ 未知错误: {type(e).__name__}: {e}")
+            return False
 
     def ensure_connection(self):
-        """确保连接可用"""
-        if not self.connection_tested:
-            logger.info("🔄 强制重新测试连接...")
+        """确保连接可用 - 懒加载测试"""
+        if not self.connection_tested and not self.rate_limit_hit:
+            logger.info("🔄 首次调用，测试连接...")
             return self.test_connection()
+
+        if self.rate_limit_hit:
+            logger.info("📊 API限制状态，跳过连接检查")
+            return False
 
         logger.info(f"📊 连接状态: {'可用' if self.api_working else '不可用'}")
         return self.api_working
 
     def get_user_info(self, username):
-        """获取用户信息 - 调试版"""
+        """获取用户信息 - 优化版"""
         logger.info(f"👤 开始获取用户信息: {username}")
 
         if not self.client:
             logger.error("❌ 客户端未初始化")
             return None
 
-        # 检查连接
-        if not self.ensure_connection():
-            logger.error("❌ API连接不可用")
+        # 检查是否处于rate limit状态
+        if self.rate_limit_hit:
+            logger.warning("❌ 当前处于API限制状态，暂时无法获取数据")
             return None
 
         try:
@@ -212,8 +219,17 @@ class TwitterAPI:
             }
 
             logger.info(f"✅ 成功获取用户信息: {user_info['name']} - {user_info['followers_count']} 关注者")
+            
+            # 重置rate limit标志（如果成功获取数据）
+            self.rate_limit_hit = False
+            self.api_working = True
+            
             return user_info
 
+        except tweepy.TooManyRequests as e:
+            logger.warning(f"⚠️ API限制: {e}")
+            self.rate_limit_hit = True
+            return None
         except tweepy.Unauthorized as e:
             logger.error(f"❌ 认证失败: {e}")
             return None
@@ -228,16 +244,16 @@ class TwitterAPI:
             return None
 
     def get_user_tweets(self, username, max_results=10, start_time=None, end_time=None):
-        """获取用户推文 - 调试版"""
+        """获取用户推文 - 优化版"""
         logger.info(f"🐦 开始获取推文: {username} (最多{max_results}条)")
 
         if not self.client:
             logger.error("❌ 客户端未初始化")
             return []
 
-        # 检查连接
-        if not self.ensure_connection():
-            logger.error("❌ API连接不可用")
+        # 检查是否处于rate limit状态
+        if self.rate_limit_hit:
+            logger.warning("❌ 当前处于API限制状态，暂时无法获取数据")
             return []
 
         try:
@@ -300,8 +316,17 @@ class TwitterAPI:
                 result.append(tweet_data)
 
             logger.info(f"✅ 成功获取 {len(result)} 条推文")
+            
+            # 重置rate limit标志（如果成功获取数据）
+            self.rate_limit_hit = False
+            self.api_working = True
+            
             return result
 
+        except tweepy.TooManyRequests as e:
+            logger.warning(f"⚠️ API限制: {e}")
+            self.rate_limit_hit = True
+            return []
         except tweepy.Unauthorized as e:
             logger.error(f"❌ 认证失败: {e}")
             return []
@@ -314,37 +339,6 @@ class TwitterAPI:
         except Exception as e:
             logger.error(f"❌ 未知错误: {type(e).__name__}: {e}")
             return []
-
-# 添加一个调试端点
-@app.route('/api/debug_twitter_status')
-def debug_twitter_status():
-    """调试Twitter API状态"""
-    try:
-        debug_info = {
-            'timestamp': datetime.now().isoformat(),
-            'bearer_token': {
-                'exists': 'TWITTER_BEARER_TOKEN' in os.environ,
-                'length': len(os.environ.get('TWITTER_BEARER_TOKEN', '')) if 'TWITTER_BEARER_TOKEN' in os.environ else 0
-            },
-            'twitter_api': {
-                'object_exists': twitter_api is not None,
-                'client_exists': twitter_api and hasattr(twitter_api, 'client') and twitter_api.client is not None,
-                'connection_tested': twitter_api and getattr(twitter_api, 'connection_tested', False),
-                'api_working': twitter_api and getattr(twitter_api, 'api_working', False)
-            }
-        }
-
-        # 强制重新测试连接
-        if twitter_api and twitter_api.client:
-            debug_info['force_test_result'] = twitter_api.test_connection()
-
-        return jsonify(debug_info)
-
-    except Exception as e:
-        return jsonify({
-            'error': str(e),
-            'timestamp': datetime.now().isoformat()
-        }), 500
 
 class ResearcherManager:
     def __init__(self):
@@ -1664,9 +1658,10 @@ def test_twitter_simple():
             'error_type': type(e).__name__
         }), 500
 
+# 修复：合并重复的调试端点
 @app.route('/api/debug_twitter_status')
 def debug_twitter_status():
-    """调试Twitter API状态"""
+    """调试Twitter API状态 - 统一版本"""
     try:
         debug_info = {
             'timestamp': datetime.now().isoformat(),
@@ -1678,12 +1673,13 @@ def debug_twitter_status():
                 'object_exists': twitter_api is not None,
                 'client_exists': twitter_api and hasattr(twitter_api, 'client') and twitter_api.client is not None,
                 'connection_tested': twitter_api and getattr(twitter_api, 'connection_tested', False),
-                'api_working': twitter_api and getattr(twitter_api, 'api_working', False)
+                'api_working': twitter_api and getattr(twitter_api, 'api_working', False),
+                'rate_limit_hit': twitter_api and getattr(twitter_api, 'rate_limit_hit', False)
             }
         }
 
-        # 强制重新测试连接
-        if twitter_api and twitter_api.client:
+        # 如果没有遇到rate limit，可以尝试测试连接
+        if twitter_api and twitter_api.client and not getattr(twitter_api, 'rate_limit_hit', False):
             debug_info['force_test_result'] = twitter_api.test_connection()
 
         return jsonify(debug_info)
@@ -1693,7 +1689,7 @@ def debug_twitter_status():
             'error': str(e),
             'timestamp': datetime.now().isoformat()
         }), 500
-                
+
 if __name__ == '__main__':
     logger.info("🚀 AI研究者X内容学习平台启动中...")
     logger.info(f"📊 系统容量: 最大支持 5000 位研究者监控")
