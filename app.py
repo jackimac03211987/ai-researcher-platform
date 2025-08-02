@@ -61,6 +61,8 @@ def insert_researcher_batch(cursor, batch_data, error_details):
 
     return added_count
 
+# 完整的TwitterAPI类 - 在你的app.py中找到class TwitterAPI并替换为以下完整版本：
+
 class TwitterAPI:
     def __init__(self):
         self.client = None
@@ -177,180 +179,169 @@ class TwitterAPI:
             logger.error(f"❌ 获取 {username} 用户信息时发生错误: {e}")
             return None
 
-def get_user_tweets_fixed(self, username, max_results=10, start_time=None, end_time=None):
-    """修复版本的推文获取方法 - 简化参数避免404"""
-    if not self.client:
-        logger.warning(f"Twitter客户端未配置，无法获取 {username} 的推文")
-        return []
+    def get_user_tweets(self, username, max_results=10, start_time=None, end_time=None):
+        """获取用户推文 - 修复版本，避免404错误"""
+        if not self.client:
+            logger.warning(f"Twitter客户端未配置，无法获取 {username} 的推文")
+            return []
 
-    if not self.ensure_connection():
-        logger.warning(f"Twitter API连接不可用，跳过获取 {username} 的推文")
-        return []
+        if not self.ensure_connection():
+            logger.warning(f"Twitter API连接不可用，跳过获取 {username} 的推文")
+            return []
 
+        try:
+            username = username.replace('@', '').strip()
+            if not username:
+                logger.warning("用户名为空")
+                return []
+
+            logger.info(f"🔍 正在获取推文: {username}, 最大数量: {max_results}")
+
+            # 首先获取用户信息
+            user_response = self.client.get_user(username=username)
+            if not user_response or not user_response.data:
+                logger.warning(f"❌ 无法找到用户 {username}")
+                return []
+
+            user_id = user_response.data.id
+            logger.info(f"✅ 找到用户 {username}, ID: {user_id}")
+
+            # 限制最大结果数
+            max_results = min(max_results, 100)
+
+            # 使用简化参数避免404错误
+            logger.info(f"🐦 使用简化参数获取推文...")
+
+            tweets_response = self.client.get_users_tweets(
+                id=user_id,
+                max_results=max_results,
+                tweet_fields=['created_at', 'public_metrics']  # 只使用基础字段
+            )
+
+            if not tweets_response or not tweets_response.data:
+                logger.warning(f"ℹ️ 未找到 {username} 的推文")
+                return []
+
+            logger.info(f"📥 API成功返回 {len(tweets_response.data)} 条推文，开始处理...")
+
+            result = []
+            for i, tweet in enumerate(tweets_response.data):
+                try:
+                    # 获取互动数据
+                    public_metrics = getattr(tweet, 'public_metrics', {})
+
+                    # 简化的推文类型判断
+                    tweet_type = 'original'
+                    is_reply = False
+
+                    # 简单判断是否为回复
+                    if tweet.text and tweet.text.startswith('@'):
+                        tweet_type = 'reply'
+                        is_reply = True
+
+                    tweet_data = {
+                        'id': str(tweet.id),
+                        'content': tweet.text or '',
+                        'created_at': tweet.created_at.isoformat() if tweet.created_at else None,
+                        'likes': public_metrics.get('like_count', 0),
+                        'retweets': public_metrics.get('retweet_count', 0),
+                        'replies': public_metrics.get('reply_count', 0),
+                        'quotes': public_metrics.get('quote_count', 0),
+                        'author': username,
+                        'type': tweet_type,
+                        'media_urls': [],
+                        'is_retweet': False,
+                        'is_reply': is_reply
+                    }
+
+                    result.append(tweet_data)
+
+                    # 简化的日志
+                    logger.info(f"  📝 推文 {i+1}: {tweet_type} | 👍{public_metrics.get('like_count', 0)}")
+
+                except Exception as e:
+                    logger.error(f"❌ 处理推文 {i+1} 时出错: {e}")
+                    continue
+
+            logger.info(f"✅ 成功处理 {username} 的推文: 获取{len(tweets_response.data)}条，处理{len(result)}条")
+            return result
+
+        except tweepy.Unauthorized:
+            logger.error(f"❌ 无权访问用户 {username} 的推文，可能是私人账户")
+            return []
+        except tweepy.NotFound:
+            logger.error(f"❌ 推文获取404错误: {username}")
+            return []
+        except tweepy.TooManyRequests:
+            logger.error(f"❌ API请求过于频繁，请稍后再试")
+            self.api_working = False
+            return []
+        except Exception as e:
+            logger.error(f"❌ 获取 {username} 推文时发生意外错误: {e}")
+            logger.error(f"   错误类型: {type(e).__name__}")
+            return []
+
+# 同时添加一个验证方法存在的调试端点到app.py中：
+@app.route('/api/check_twitter_api_methods')
+def check_twitter_api_methods():
+    """检查TwitterAPI类的方法是否存在"""
     try:
-        username = username.replace('@', '').strip()
-        if not username:
-            logger.warning("用户名为空")
-            return []
+        methods_info = {
+            'twitter_api_exists': twitter_api is not None,
+            'client_exists': twitter_api and twitter_api.client is not None,
+            'available_methods': []
+        }
 
-        logger.info(f"🔍 正在获取推文: {username}, 最大数量: {max_results}")
+        if twitter_api:
+            # 检查方法是否存在
+            method_names = ['get_user_info', 'get_user_tweets', 'test_connection', 'ensure_connection']
+            for method_name in method_names:
+                exists = hasattr(twitter_api, method_name)
+                is_callable = exists and callable(getattr(twitter_api, method_name, None))
+                methods_info['available_methods'].append({
+                    'method': method_name,
+                    'exists': exists,
+                    'callable': is_callable
+                })
 
-        # 首先获取用户信息（这个已经验证可以工作）
-        user_response = self.client.get_user(username=username)
-        if not user_response or not user_response.data:
-            logger.warning(f"❌ 无法找到用户 {username}")
-            return []
+        return jsonify(methods_info)
 
-        user_id = user_response.data.id
-        logger.info(f"✅ 找到用户 {username}, ID: {user_id}")
-
-        # 限制最大结果数，避免API限制
-        max_results = min(max_results, 100)
-
-        # 方法1：最简参数调用
-        logger.info(f"🐦 尝试方法1: 最简参数")
-        try:
-            tweets_response = self.client.get_users_tweets(
-                id=user_id,
-                max_results=max_results
-                # 不添加任何额外参数
-            )
-            
-            if tweets_response and tweets_response.data:
-                logger.info(f"✅ 方法1成功: 获取到 {len(tweets_response.data)} 条推文")
-                return self._process_simple_tweets(tweets_response.data, username)
-            else:
-                logger.info(f"⚠️ 方法1失败: 响应为空")
-                
-        except Exception as e:
-            logger.error(f"❌ 方法1失败: {e}")
-
-        # 方法2：只添加基础字段
-        logger.info(f"🐦 尝试方法2: 基础字段")
-        try:
-            tweets_response = self.client.get_users_tweets(
-                id=user_id,
-                max_results=max_results,
-                tweet_fields=['created_at', 'public_metrics']  # 只要最基础的字段
-            )
-            
-            if tweets_response and tweets_response.data:
-                logger.info(f"✅ 方法2成功: 获取到 {len(tweets_response.data)} 条推文")
-                return self._process_basic_tweets(tweets_response.data, username)
-            else:
-                logger.info(f"⚠️ 方法2失败: 响应为空")
-                
-        except Exception as e:
-            logger.error(f"❌ 方法2失败: {e}")
-
-        # 方法3：排除转发和回复
-        logger.info(f"🐦 尝试方法3: 排除转发和回复")
-        try:
-            tweets_response = self.client.get_users_tweets(
-                id=user_id,
-                max_results=max_results,
-                tweet_fields=['created_at', 'public_metrics'],
-                exclude=['retweets', 'replies']  # 只获取原创推文
-            )
-            
-            if tweets_response and tweets_response.data:
-                logger.info(f"✅ 方法3成功: 获取到 {len(tweets_response.data)} 条推文")
-                return self._process_basic_tweets(tweets_response.data, username)
-            else:
-                logger.info(f"⚠️ 方法3失败: 响应为空")
-                
-        except Exception as e:
-            logger.error(f"❌ 方法3失败: {e}")
-
-        # 方法4：扩大时间范围（如果设置了时间限制）
-        if start_time or end_time:
-            logger.info(f"🐦 尝试方法4: 移除时间限制")
-            try:
-                tweets_response = self.client.get_users_tweets(
-                    id=user_id,
-                    max_results=max_results,
-                    tweet_fields=['created_at', 'public_metrics']
-                    # 不设置时间限制
-                )
-                
-                if tweets_response and tweets_response.data:
-                    logger.info(f"✅ 方法4成功: 获取到 {len(tweets_response.data)} 条推文")
-                    return self._process_basic_tweets(tweets_response.data, username)
-                else:
-                    logger.info(f"⚠️ 方法4失败: 响应为空")
-                    
-            except Exception as e:
-                logger.error(f"❌ 方法4失败: {e}")
-
-        logger.warning(f"ℹ️ 所有方法都失败了，用户 {username} 可能没有可访问的推文")
-        return []
-
-    except tweepy.Unauthorized:
-        logger.error(f"❌ 无权访问用户 {username} 的推文（私人账户）")
-        return []
-    except tweepy.NotFound:
-        logger.error(f"❌ 用户 {username} 不存在")
-        return []
-    except tweepy.TooManyRequests:
-        logger.error(f"❌ API请求过于频繁")
-        self.api_working = False
-        return []
     except Exception as e:
-        logger.error(f"❌ 获取 {username} 推文时发生意外错误: {e}")
-        return []
+        logger.error(f"检查TwitterAPI方法失败: {e}")
+        return jsonify({'error': str(e)}), 500
 
-def _process_simple_tweets(self, tweets_data, username):
-    """处理最简单的推文数据"""
-    result = []
-    for tweet in tweets_data:
-        try:
-            tweet_data = {
-                'id': str(tweet.id),
-                'content': tweet.text or '',
-                'created_at': tweet.created_at.isoformat() if hasattr(tweet, 'created_at') and tweet.created_at else None,
-                'likes': 0,
-                'retweets': 0,
-                'replies': 0,
-                'quotes': 0,
-                'author': username,
-                'type': 'original',
-                'media_urls': [],
-                'is_retweet': False,
-                'is_reply': False
-            }
-            result.append(tweet_data)
-        except Exception as e:
-            logger.error(f"处理简单推文时出错: {e}")
-            continue
-    return result
+# 添加一个测试方法是否工作的端点：
+@app.route('/api/test_get_user_tweets/<username>')
+def test_get_user_tweets_method(username):
+    """直接测试get_user_tweets方法"""
+    try:
+        if not twitter_api:
+            return jsonify({'error': 'twitter_api对象不存在'}), 500
 
-def _process_basic_tweets(self, tweets_data, username):
-    """处理包含基础字段的推文数据"""
-    result = []
-    for tweet in tweets_data:
-        try:
-            # 获取互动数据
-            public_metrics = getattr(tweet, 'public_metrics', {})
-            
-            tweet_data = {
-                'id': str(tweet.id),
-                'content': tweet.text or '',
-                'created_at': tweet.created_at.isoformat() if hasattr(tweet, 'created_at') and tweet.created_at else None,
-                'likes': public_metrics.get('like_count', 0),
-                'retweets': public_metrics.get('retweet_count', 0),
-                'replies': public_metrics.get('reply_count', 0),
-                'quotes': public_metrics.get('quote_count', 0),
-                'author': username,
-                'type': 'original',
-                'media_urls': [],
-                'is_retweet': False,
-                'is_reply': tweet.text and tweet.text.startswith('@') if tweet.text else False
-            }
-            result.append(tweet_data)
-        except Exception as e:
-            logger.error(f"处理基础推文时出错: {e}")
-            continue
-    return result
+        if not hasattr(twitter_api, 'get_user_tweets'):
+            return jsonify({'error': 'get_user_tweets方法不存在'}), 500
+
+        if not callable(getattr(twitter_api, 'get_user_tweets')):
+            return jsonify({'error': 'get_user_tweets不是可调用的方法'}), 500
+
+        # 调用方法
+        tweets = twitter_api.get_user_tweets(username, max_results=3)
+
+        return jsonify({
+            'username': username,
+            'method_exists': True,
+            'tweets_count': len(tweets),
+            'tweets_sample': tweets[:2] if tweets else [],
+            'success': True
+        })
+
+    except Exception as e:
+        logger.error(f"测试get_user_tweets方法失败: {e}")
+        return jsonify({
+            'error': str(e),
+            'error_type': type(e).__name__,
+            'username': username
+        }), 500
 
 class ResearcherManager:
     def __init__(self):
