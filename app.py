@@ -2076,15 +2076,15 @@ def safe_debug_tweets():
         data = request.get_json() or {}
         username = data.get('username', '').replace('@', '').strip()
         max_results = min(data.get('max_results', 10), 20)  # 限制最大数量
-        
+
         logger.info(f"🧪 开始安全调试: {username}")
-        
+
         if not username:
             return jsonify({'error': '用户名不能为空'}), 400
-        
+
         if not twitter_api or not twitter_api.client:
             return jsonify({'error': 'Twitter API未初始化'}), 500
-        
+
         result = {
             'username': username,
             'steps': [],
@@ -2092,47 +2092,47 @@ def safe_debug_tweets():
             'tweets_found': 0,
             'error': None
         }
-        
+
         # 步骤1: 获取用户信息（快速测试）
         try:
             logger.info(f"🔍 步骤1: 获取用户信息")
             result['steps'].append('开始获取用户信息')
-            
+
             user_response = twitter_api.client.get_user(username=username)
             if not user_response or not user_response.data:
                 result['error'] = f'用户 {username} 不存在或无法访问'
                 result['steps'].append(f'❌ {result["error"]}')
                 return jsonify(result)
-            
+
             user_id = user_response.data.id
             result['user_id'] = str(user_id)
             result['steps'].append(f'✅ 用户ID: {user_id}')
             logger.info(f"✅ 用户ID获取成功: {user_id}")
-            
+
         except Exception as e:
             result['error'] = f'获取用户信息失败: {str(e)}'
             result['steps'].append(f'❌ {result["error"]}')
             logger.error(f"❌ 获取用户信息失败: {e}")
             return jsonify(result)
-        
+
         # 步骤2: 尝试最简单的推文获取
         try:
             logger.info(f"🐦 步骤2: 尝试获取推文")
             result['steps'].append('尝试获取推文（最简参数）')
-            
+
             # 使用最简单的参数，避免复杂的字段请求
             tweets_response = twitter_api.client.get_users_tweets(
                 id=user_id,
                 max_results=max_results
                 # 不添加任何额外字段，使用最基础的调用
             )
-            
+
             if tweets_response and tweets_response.data:
                 tweets_count = len(tweets_response.data)
                 result['success'] = True
                 result['tweets_found'] = tweets_count
                 result['steps'].append(f'✅ 找到 {tweets_count} 条推文')
-                
+
                 # 记录第一条推文信息
                 if tweets_response.data:
                     first_tweet = tweets_response.data[0]
@@ -2142,21 +2142,21 @@ def safe_debug_tweets():
                         'created_at': str(first_tweet.created_at) if hasattr(first_tweet, 'created_at') else None
                     }
                     result['steps'].append(f'📝 样本: {result["first_tweet"]["text"][:50]}...')
-                
+
                 logger.info(f"✅ 推文获取成功: {tweets_count} 条")
-                
+
             else:
                 result['steps'].append('⚠️ API响应为空，未找到推文')
                 logger.warning(f"⚠️ API响应为空")
-                
+
         except Exception as e:
             result['error'] = f'推文获取失败: {str(e)}'
             result['steps'].append(f'❌ {result["error"]}')
             logger.error(f"❌ 推文获取失败: {e}")
-        
+
         logger.info(f"🎉 调试完成: {result['success']}")
         return jsonify(result)
-        
+
     except Exception as e:
         logger.error(f"💥 安全调试发生意外错误: {e}")
         return jsonify({
@@ -2171,17 +2171,17 @@ def quick_test_user():
     try:
         data = request.get_json() or {}
         username = data.get('username', 'karpathy')  # 默认测试karpathy
-        
+
         logger.info(f"⚡ 快速测试用户: {username}")
-        
+
         if not twitter_api or not twitter_api.client:
             return jsonify({'error': 'Twitter API未初始化'}), 500
-        
+
         # 只做最基础的测试
         try:
             # 清理用户名
             clean_username = username.replace('@', '').strip()
-            
+
             # 获取用户信息
             user_response = twitter_api.client.get_user(username=clean_username)
             if not user_response or not user_response.data:
@@ -2189,18 +2189,18 @@ def quick_test_user():
                     'success': False,
                     'message': f'用户 {clean_username} 不存在'
                 })
-            
+
             user_id = user_response.data.id
-            
+
             # 尝试获取少量推文
             tweets_response = twitter_api.client.get_users_tweets(
                 id=user_id,
                 max_results=5  # 只获取5条
             )
-            
+
             success = tweets_response and tweets_response.data and len(tweets_response.data) > 0
             tweets_count = len(tweets_response.data) if tweets_response and tweets_response.data else 0
-            
+
             return jsonify({
                 'success': success,
                 'username': clean_username,
@@ -2208,14 +2208,14 @@ def quick_test_user():
                 'tweets_count': tweets_count,
                 'message': f'{"✅ 成功" if success else "⚠️ 无推文"} - 用户: {clean_username}, 推文: {tweets_count} 条'
             })
-            
+
         except Exception as e:
             return jsonify({
                 'success': False,
                 'error': str(e),
                 'message': f'测试失败: {str(e)}'
             })
-            
+
     except Exception as e:
         logger.error(f"快速测试失败: {e}")
         return jsonify({'error': str(e)}), 500
@@ -2229,7 +2229,7 @@ def check_system_health():
             'components': {},
             'overall_status': 'healthy'
         }
-        
+
         # 检查数据库
         try:
             conn = sqlite3.connect('research_platform.db')
@@ -2237,7 +2237,7 @@ def check_system_health():
             cursor.execute('SELECT COUNT(*) FROM researchers')
             researchers_count = cursor.fetchone()[0]
             conn.close()
-            
+
             health_status['components']['database'] = {
                 'status': 'healthy',
                 'researchers_count': researchers_count
@@ -2248,7 +2248,7 @@ def check_system_health():
                 'error': str(e)
             }
             health_status['overall_status'] = 'degraded'
-        
+
         # 检查Twitter API客户端（不调用API）
         if twitter_api and twitter_api.client:
             health_status['components']['twitter_api'] = {
@@ -2261,7 +2261,7 @@ def check_system_health():
                 'status': 'not_initialized'
             }
             health_status['overall_status'] = 'degraded'
-        
+
         # 检查监控服务
         if monitoring_service:
             health_status['components']['monitoring'] = {
@@ -2272,9 +2272,9 @@ def check_system_health():
             health_status['components']['monitoring'] = {
                 'status': 'not_initialized'
             }
-        
+
         return jsonify(health_status)
-        
+
     except Exception as e:
         logger.error(f"健康检查失败: {e}")
         return jsonify({
@@ -2610,6 +2610,150 @@ def test_twitter_api(researcher_id):
         logger.error(f"测试Twitter API失败: {e}")
         return jsonify({'error': str(e)}), 500
 
+# 立即在你的app.py文件末尾（在if __name__ == '__main__':之前）添加这个路由：
+
+@app.route('/api/emergency_debug/<int:researcher_id>')
+def emergency_debug(researcher_id):
+    """紧急调试特定研究者的404问题"""
+    try:
+        conn = sqlite3.connect('research_platform.db')
+        cursor = conn.cursor()
+        cursor.execute('SELECT name, x_account FROM researchers WHERE id = ?', (researcher_id,))
+        researcher = cursor.fetchone()
+        conn.close()
+        
+        if not researcher:
+            return jsonify({'error': f'研究者ID {researcher_id} 不存在'}), 404
+        
+        name, x_account = researcher
+        debug_info = {
+            'researcher_id': researcher_id,
+            'name': name,
+            'x_account': x_account,
+            'debug_steps': []
+        }
+        
+        # 步骤1：检查用户名
+        debug_info['debug_steps'].append(f"1. 原始用户名: '{x_account}'")
+        
+        if not x_account:
+            debug_info['debug_steps'].append("❌ 用户名为空 - 这是问题所在！")
+            debug_info['issue'] = 'empty_username'
+            return jsonify(debug_info)
+        
+        clean_username = x_account.replace('@', '').strip()
+        debug_info['clean_username'] = clean_username
+        debug_info['debug_steps'].append(f"2. 清理后用户名: '{clean_username}'")
+        
+        if not clean_username:
+            debug_info['debug_steps'].append("❌ 清理后用户名为空 - 这是问题所在！")
+            debug_info['issue'] = 'invalid_username'
+            return jsonify(debug_info)
+        
+        # 步骤2：检查API状态
+        debug_info['debug_steps'].append(f"3. Twitter API状态:")
+        debug_info['debug_steps'].append(f"   - 客户端存在: {twitter_api and twitter_api.client is not None}")
+        debug_info['debug_steps'].append(f"   - API工作状态: {twitter_api and twitter_api.api_working}")
+        
+        if not twitter_api or not twitter_api.client:
+            debug_info['debug_steps'].append("❌ Twitter API未初始化")
+            debug_info['issue'] = 'api_not_initialized'
+            return jsonify(debug_info)
+        
+        # 步骤3：尝试API调用
+        debug_info['debug_steps'].append(f"4. 尝试API调用用户: @{clean_username}")
+        
+        try:
+            user_response = twitter_api.client.get_user(username=clean_username)
+            
+            if not user_response:
+                debug_info['debug_steps'].append("❌ API响应为空")
+                debug_info['issue'] = 'empty_response'
+            elif not user_response.data:
+                debug_info['debug_steps'].append("❌ 用户数据为空 - 用户不存在")
+                debug_info['issue'] = 'user_not_found'
+            else:
+                debug_info['debug_steps'].append("✅ 用户存在!")
+                debug_info['user_info'] = {
+                    'id': str(user_response.data.id),
+                    'username': user_response.data.username,
+                    'name': user_response.data.name
+                }
+                debug_info['issue'] = 'none'
+                
+        except tweepy.NotFound as e:
+            debug_info['debug_steps'].append(f"❌ 404错误 - 用户不存在: {str(e)}")
+            debug_info['issue'] = 'user_not_found'
+            debug_info['error_details'] = str(e)
+            
+        except tweepy.Unauthorized as e:
+            debug_info['debug_steps'].append(f"❌ 401错误 - 无权访问: {str(e)}")
+            debug_info['issue'] = 'unauthorized'
+            debug_info['error_details'] = str(e)
+            
+        except Exception as e:
+            debug_info['debug_steps'].append(f"❌ 其他错误: {type(e).__name__}: {str(e)}")
+            debug_info['issue'] = 'other_error'
+            debug_info['error_details'] = str(e)
+        
+        # 步骤4：提供解决建议
+        if debug_info.get('issue') == 'user_not_found':
+            debug_info['suggestions'] = [
+                f"用户 @{clean_username} 不存在",
+                "可能的原因：1) 用户名错误 2) 账户已删除 3) 账户已暂停",
+                "建议：在Twitter上手动搜索该用户名验证"
+            ]
+        elif debug_info.get('issue') == 'unauthorized':
+            debug_info['suggestions'] = [
+                f"用户 @{clean_username} 存在但无法访问",
+                "可能的原因：1) 私人账户 2) API权限不足",
+                "建议：检查该账户是否设为私人"
+            ]
+        
+        return jsonify(debug_info)
+        
+    except Exception as e:
+        return jsonify({
+            'error': f'调试过程出错: {str(e)}',
+            'researcher_id': researcher_id
+        }), 500
+
+# 同时添加一个快速修复端点：
+@app.route('/api/quick_fix_username/<int:researcher_id>', methods=['POST'])
+def quick_fix_username(researcher_id):
+    """快速修复用户名格式问题"""
+    try:
+        data = request.get_json() or {}
+        new_username = data.get('new_username', '').strip()
+        
+        conn = sqlite3.connect('research_platform.db')
+        cursor = conn.cursor()
+        
+        if new_username:
+            # 确保用户名格式正确
+            if not new_username.startswith('@'):
+                new_username = '@' + new_username
+            
+            cursor.execute('UPDATE researchers SET x_account = ? WHERE id = ?', (new_username, researcher_id))
+            conn.commit()
+            
+            result = {'message': f'用户名已更新为: {new_username}'}
+        else:
+            # 获取当前信息
+            cursor.execute('SELECT name, x_account FROM researchers WHERE id = ?', (researcher_id,))
+            researcher = cursor.fetchone()
+            result = {
+                'current_name': researcher[0] if researcher else 'Unknown',
+                'current_username': researcher[1] if researcher else 'None',
+                'message': '请提供新的用户名'
+            }
+        
+        conn.close()
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+                                        
 if __name__ == '__main__':
     logger.info("🚀 AI研究者X内容学习平台启动中...")
     logger.info(f"📊 系统容量: 最大支持 5000 位研究者监控")
