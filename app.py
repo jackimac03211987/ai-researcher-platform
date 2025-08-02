@@ -2067,261 +2067,220 @@ def get_init_status():
 
                             # 在app.py中添加这些详细的调试端点
 
-@app.route('/api/debug_direct_tweets', methods=['POST'])
-def debug_direct_tweets():
-    """直接调用Twitter API获取推文的详细调试"""
-    try:
-        data = request.get_json()
-        username = data.get('username', '').replace('@', '').strip()
-        max_results = data.get('max_results', 20)
+# 安全版本的调试端点 - 添加到app.py的路由函数区域
 
-        debug_info = {
-            'step': 'initialization',
-            'details': [],
-            'raw_response': None,
-            'processed_data': None,
+@app.route('/api/safe_debug_tweets', methods=['POST'])
+def safe_debug_tweets():
+    """安全版本的推文调试 - 带超时和错误处理"""
+    try:
+        data = request.get_json() or {}
+        username = data.get('username', '').replace('@', '').strip()
+        max_results = min(data.get('max_results', 10), 20)  # 限制最大数量
+        
+        logger.info(f"🧪 开始安全调试: {username}")
+        
+        if not username:
+            return jsonify({'error': '用户名不能为空'}), 400
+        
+        if not twitter_api or not twitter_api.client:
+            return jsonify({'error': 'Twitter API未初始化'}), 500
+        
+        result = {
+            'username': username,
+            'steps': [],
+            'success': False,
+            'tweets_found': 0,
             'error': None
         }
-
-        debug_info['details'].append(f"🎯 开始调试用户: {username}")
-        debug_info['details'].append(f"📊 请求参数: max_results={max_results}")
-
-        if not twitter_api or not twitter_api.client:
-            debug_info['error'] = 'Twitter API客户端未初始化'
-            return jsonify({
-                'success': False,
-                'error': debug_info['error'],
-                'debug_info': debug_info
-            })
-
-        debug_info['step'] = 'getting_user_id'
-        debug_info['details'].append("👤 获取用户ID...")
-
-        # 步骤1: 获取用户ID
+        
+        # 步骤1: 获取用户信息（快速测试）
         try:
+            logger.info(f"🔍 步骤1: 获取用户信息")
+            result['steps'].append('开始获取用户信息')
+            
             user_response = twitter_api.client.get_user(username=username)
             if not user_response or not user_response.data:
-                debug_info['error'] = f'用户 {username} 不存在或无法访问'
+                result['error'] = f'用户 {username} 不存在或无法访问'
+                result['steps'].append(f'❌ {result["error"]}')
+                return jsonify(result)
+            
+            user_id = user_response.data.id
+            result['user_id'] = str(user_id)
+            result['steps'].append(f'✅ 用户ID: {user_id}')
+            logger.info(f"✅ 用户ID获取成功: {user_id}")
+            
+        except Exception as e:
+            result['error'] = f'获取用户信息失败: {str(e)}'
+            result['steps'].append(f'❌ {result["error"]}')
+            logger.error(f"❌ 获取用户信息失败: {e}")
+            return jsonify(result)
+        
+        # 步骤2: 尝试最简单的推文获取
+        try:
+            logger.info(f"🐦 步骤2: 尝试获取推文")
+            result['steps'].append('尝试获取推文（最简参数）')
+            
+            # 使用最简单的参数，避免复杂的字段请求
+            tweets_response = twitter_api.client.get_users_tweets(
+                id=user_id,
+                max_results=max_results
+                # 不添加任何额外字段，使用最基础的调用
+            )
+            
+            if tweets_response and tweets_response.data:
+                tweets_count = len(tweets_response.data)
+                result['success'] = True
+                result['tweets_found'] = tweets_count
+                result['steps'].append(f'✅ 找到 {tweets_count} 条推文')
+                
+                # 记录第一条推文信息
+                if tweets_response.data:
+                    first_tweet = tweets_response.data[0]
+                    result['first_tweet'] = {
+                        'id': str(first_tweet.id),
+                        'text': first_tweet.text[:100] if first_tweet.text else '',
+                        'created_at': str(first_tweet.created_at) if hasattr(first_tweet, 'created_at') else None
+                    }
+                    result['steps'].append(f'📝 样本: {result["first_tweet"]["text"][:50]}...')
+                
+                logger.info(f"✅ 推文获取成功: {tweets_count} 条")
+                
+            else:
+                result['steps'].append('⚠️ API响应为空，未找到推文')
+                logger.warning(f"⚠️ API响应为空")
+                
+        except Exception as e:
+            result['error'] = f'推文获取失败: {str(e)}'
+            result['steps'].append(f'❌ {result["error"]}')
+            logger.error(f"❌ 推文获取失败: {e}")
+        
+        logger.info(f"🎉 调试完成: {result['success']}")
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"💥 安全调试发生意外错误: {e}")
+        return jsonify({
+            'error': f'调试过程异常: {str(e)}',
+            'steps': ['调试过程发生意外错误'],
+            'success': False
+        }), 500
+
+@app.route('/api/quick_test_user', methods=['POST'])
+def quick_test_user():
+    """快速测试特定用户 - 超轻量版本"""
+    try:
+        data = request.get_json() or {}
+        username = data.get('username', 'karpathy')  # 默认测试karpathy
+        
+        logger.info(f"⚡ 快速测试用户: {username}")
+        
+        if not twitter_api or not twitter_api.client:
+            return jsonify({'error': 'Twitter API未初始化'}), 500
+        
+        # 只做最基础的测试
+        try:
+            # 清理用户名
+            clean_username = username.replace('@', '').strip()
+            
+            # 获取用户信息
+            user_response = twitter_api.client.get_user(username=clean_username)
+            if not user_response or not user_response.data:
                 return jsonify({
                     'success': False,
-                    'error': debug_info['error'],
-                    'debug_info': debug_info
+                    'message': f'用户 {clean_username} 不存在'
                 })
-
+            
             user_id = user_response.data.id
-            user_info = {
-                'id': str(user_id),
-                'username': user_response.data.username,
-                'name': user_response.data.name
-            }
-            debug_info['details'].append(f"✅ 用户ID获取成功: {user_id}")
-            debug_info['user_info'] = user_info
-
+            
+            # 尝试获取少量推文
+            tweets_response = twitter_api.client.get_users_tweets(
+                id=user_id,
+                max_results=5  # 只获取5条
+            )
+            
+            success = tweets_response and tweets_response.data and len(tweets_response.data) > 0
+            tweets_count = len(tweets_response.data) if tweets_response and tweets_response.data else 0
+            
+            return jsonify({
+                'success': success,
+                'username': clean_username,
+                'user_id': str(user_id),
+                'tweets_count': tweets_count,
+                'message': f'{"✅ 成功" if success else "⚠️ 无推文"} - 用户: {clean_username}, 推文: {tweets_count} 条'
+            })
+            
         except Exception as e:
-            debug_info['error'] = f'获取用户ID失败: {str(e)}'
             return jsonify({
                 'success': False,
-                'error': debug_info['error'],
-                'debug_info': debug_info
+                'error': str(e),
+                'message': f'测试失败: {str(e)}'
             })
-
-        debug_info['step'] = 'fetching_tweets'
-        debug_info['details'].append("🐦 开始获取推文...")
-
-        # 步骤2: 尝试多种方式获取推文
-        tweet_attempts = [
-            {
-                'name': '基础获取',
-                'params': {
-                    'id': user_id,
-                    'max_results': min(max_results, 100)
-                }
-            },
-            {
-                'name': '带基础字段',
-                'params': {
-                    'id': user_id,
-                    'max_results': min(max_results, 100),
-                    'tweet_fields': ['created_at', 'public_metrics']
-                }
-            },
-            {
-                'name': '带完整字段',
-                'params': {
-                    'id': user_id,
-                    'max_results': min(max_results, 100),
-                    'tweet_fields': ['created_at', 'public_metrics', 'author_id', 'conversation_id']
-                }
-            },
-            {
-                'name': '最近7天',
-                'params': {
-                    'id': user_id,
-                    'max_results': min(max_results, 100),
-                    'tweet_fields': ['created_at', 'public_metrics'],
-                    'start_time': (datetime.now(timezone.utc) - timedelta(days=7)).isoformat(),
-                    'end_time': datetime.now(timezone.utc).isoformat()
-                }
-            },
-            {
-                'name': '最近30天',
-                'params': {
-                    'id': user_id,
-                    'max_results': min(max_results, 100),
-                    'tweet_fields': ['created_at', 'public_metrics'],
-                    'start_time': (datetime.now(timezone.utc) - timedelta(days=30)).isoformat(),
-                    'end_time': datetime.now(timezone.utc).isoformat()
-                }
-            },
-            {
-                'name': '无时间限制',
-                'params': {
-                    'id': user_id,
-                    'max_results': min(max_results, 100),
-                    'tweet_fields': ['created_at', 'public_metrics']
-                }
-            }
-        ]
-
-        attempt_results = []
-        successful_response = None
-
-        for attempt in tweet_attempts:
-            try:
-                debug_info['details'].append(f"🧪 尝试方式: {attempt['name']}")
-                debug_info['details'].append(f"   参数: {attempt['params']}")
-
-                # 记录实际的API调用
-                tweets_response = twitter_api.client.get_users_tweets(**attempt['params'])
-
-                result = {
-                    'name': attempt['name'],
-                    'params': attempt['params'],
-                    'success': False,
-                    'tweets_count': 0,
-                    'raw_response_info': {},
-                    'error': None
-                }
-
-                if tweets_response:
-                    # 记录原始响应信息
-                    result['raw_response_info'] = {
-                        'has_data': hasattr(tweets_response, 'data') and tweets_response.data is not None,
-                        'data_type': str(type(tweets_response.data)) if hasattr(tweets_response, 'data') else 'None',
-                        'data_length': len(tweets_response.data) if hasattr(tweets_response, 'data') and tweets_response.data else 0,
-                        'has_includes': hasattr(tweets_response, 'includes'),
-                        'has_errors': hasattr(tweets_response, 'errors'),
-                        'has_meta': hasattr(tweets_response, 'meta')
-                    }
-
-                    if tweets_response.data:
-                        result['success'] = True
-                        result['tweets_count'] = len(tweets_response.data)
-
-                        if not successful_response:
-                            successful_response = tweets_response
-
-                        # 记录第一条推文的详细信息
-                        if tweets_response.data:
-                            first_tweet = tweets_response.data[0]
-                            result['first_tweet_sample'] = {
-                                'id': str(first_tweet.id),
-                                'text': first_tweet.text[:100] + '...' if first_tweet.text and len(first_tweet.text) > 100 else first_tweet.text,
-                                'created_at': str(first_tweet.created_at) if hasattr(first_tweet, 'created_at') else None,
-                                'has_public_metrics': hasattr(first_tweet, 'public_metrics')
-                            }
-                    else:
-                        result['error'] = '响应为空或无数据'
-                else:
-                    result['error'] = '无响应'
-
-                attempt_results.append(result)
-                debug_info['details'].append(f"   结果: {'✅ 成功' if result['success'] else '❌ 失败'} - {result['tweets_count']} 条推文")
-
-                if result['success']:
-                    debug_info['details'].append(f"   🎉 找到有效数据，停止尝试其他方式")
-                    break
-
-                # 短暂延迟避免速率限制
-                await_delay = 1
-                debug_info['details'].append(f"   ⏳ 等待 {await_delay} 秒...")
-                time.sleep(await_delay)
-
-            except tweepy.TooManyRequests:
-                result = {
-                    'name': attempt['name'],
-                    'success': False,
-                    'error': 'API速率限制'
-                }
-                attempt_results.append(result)
-                debug_info['details'].append(f"   ❌ 速率限制，停止尝试")
-                break
-
-            except Exception as e:
-                result = {
-                    'name': attempt['name'],
-                    'success': False,
-                    'error': f'异常: {str(e)}',
-                    'error_type': type(e).__name__
-                }
-                attempt_results.append(result)
-                debug_info['details'].append(f"   ❌ 异常: {str(e)}")
-
-        debug_info['step'] = 'processing_results'
-        debug_info['attempt_results'] = attempt_results
-
-        # 如果有成功的响应，处理数据
-        if successful_response and successful_response.data:
-            debug_info['details'].append("📊 处理成功的响应数据...")
-
-            processed_tweets = []
-            for i, tweet in enumerate(successful_response.data):
-                try:
-                    public_metrics = getattr(tweet, 'public_metrics', {})
-
-                    processed_tweet = {
-                        'id': str(tweet.id),
-                        'text': tweet.text or '',
-                        'created_at': tweet.created_at.isoformat() if hasattr(tweet, 'created_at') and tweet.created_at else None,
-                        'likes': public_metrics.get('like_count', 0) if public_metrics else 0,
-                        'retweets': public_metrics.get('retweet_count', 0) if public_metrics else 0,
-                        'replies': public_metrics.get('reply_count', 0) if public_metrics else 0,
-                        'author': username
-                    }
-
-                    processed_tweets.append(processed_tweet)
-
-                    if i < 3:  # 详细记录前3条
-                        debug_info['details'].append(f"   📝 推文 {i+1}: {processed_tweet['created_at']} | 👍{processed_tweet['likes']} | {processed_tweet['text'][:50]}...")
-
-                except Exception as e:
-                    debug_info['details'].append(f"   ❌ 处理推文 {i+1} 失败: {str(e)}")
-
-            debug_info['processed_data'] = processed_tweets
-            debug_info['details'].append(f"✅ 成功处理 {len(processed_tweets)} 条推文")
-
-            return jsonify({
-                'success': True,
-                'tweets_count': len(processed_tweets),
-                'tweets_sample': processed_tweets[:3],
-                'debug_info': debug_info
-            })
-        else:
-            debug_info['details'].append("❌ 所有尝试都未获取到推文数据")
-
-            return jsonify({
-                'success': False,
-                'tweets_count': 0,
-                'error': '所有API调用方式都未能获取到推文数据',
-                'debug_info': debug_info
-            })
-
+            
     except Exception as e:
-        logger.error(f"直接API调试失败: {e}")
+        logger.error(f"快速测试失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/check_system_health', methods=['GET'])
+def check_system_health():
+    """检查系统健康状态 - 不调用外部API"""
+    try:
+        health_status = {
+            'timestamp': datetime.now().isoformat(),
+            'components': {},
+            'overall_status': 'healthy'
+        }
+        
+        # 检查数据库
+        try:
+            conn = sqlite3.connect('research_platform.db')
+            cursor = conn.cursor()
+            cursor.execute('SELECT COUNT(*) FROM researchers')
+            researchers_count = cursor.fetchone()[0]
+            conn.close()
+            
+            health_status['components']['database'] = {
+                'status': 'healthy',
+                'researchers_count': researchers_count
+            }
+        except Exception as e:
+            health_status['components']['database'] = {
+                'status': 'error',
+                'error': str(e)
+            }
+            health_status['overall_status'] = 'degraded'
+        
+        # 检查Twitter API客户端（不调用API）
+        if twitter_api and twitter_api.client:
+            health_status['components']['twitter_api'] = {
+                'status': 'initialized',
+                'api_working': getattr(twitter_api, 'api_working', False),
+                'connection_tested': getattr(twitter_api, 'connection_tested', False)
+            }
+        else:
+            health_status['components']['twitter_api'] = {
+                'status': 'not_initialized'
+            }
+            health_status['overall_status'] = 'degraded'
+        
+        # 检查监控服务
+        if monitoring_service:
+            health_status['components']['monitoring'] = {
+                'status': 'initialized',
+                'running': getattr(monitoring_service, 'running', False)
+            }
+        else:
+            health_status['components']['monitoring'] = {
+                'status': 'not_initialized'
+            }
+        
+        return jsonify(health_status)
+        
+    except Exception as e:
+        logger.error(f"健康检查失败: {e}")
         return jsonify({
-            'success': False,
-            'error': f'调试过程异常: {str(e)}',
-            'debug_info': debug_info if 'debug_info' in locals() else {'error': str(e)}
+            'overall_status': 'error',
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
         }), 500
 
 @app.route('/api/test_api_parameters', methods=['POST'])
@@ -2599,7 +2558,7 @@ def debug_data_flow():
             'error': str(e),
             'flow_log': flow_log if 'flow_log' in locals() else []
         }), 500
-                            
+
 @app.route('/api/test_twitter/<int:researcher_id>', methods=['POST'])
 def test_twitter_api(researcher_id):
     """测试Twitter API连接和数据获取"""
