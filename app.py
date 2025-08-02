@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 # Twitter API配置
 TWITTER_BEARER_TOKEN = os.environ.get('TWITTER_BEARER_TOKEN')
+print(f"🔑 TWITTER_BEARER_TOKEN: {TWITTER_BEARER_TOKEN[:20] if TWITTER_BEARER_TOKEN else 'None'}...")
 
 # 数据库文件路径
 DB_FILE = 'research_platform.db'
@@ -2695,6 +2696,32 @@ def quick_fix_username(researcher_id):
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/raw_test')
+def raw_test():
+    import tweepy
+    import os
+
+    token = os.environ.get('TWITTER_BEARER_TOKEN')
+    if not token:
+        return {'error': 'Token未配置'}
+
+    try:
+        client = tweepy.Client(bearer_token=token)
+        user = client.get_user(username='karpathy')
+
+        if user and user.data:
+            return {
+                'success': True,
+                'user_id': str(user.data.id),
+                'username': user.data.username,
+                'name': user.data.name
+            }
+        else:
+            return {'error': 'API响应为空'}
+
+    except Exception as e:
+        return {'error': f'{type(e).__name__}: {str(e)}'}
 
 if __name__ == '__main__':
     logger.info("🚀 AI研究者X内容学习平台启动中...")
