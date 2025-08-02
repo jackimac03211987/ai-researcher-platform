@@ -85,33 +85,32 @@ class TwitterAPI:
             self.client = None
             logger.warning("⚠️ Twitter Bearer Token未配置，将无法获取真实数据")
 
-    def test_connection(self):
-        """测试API连接 - 只在需要时调用"""
-        if self.connection_tested:
-            return self.api_working
+def test_connection(self):
+    """测试API连接 - 修复版本"""
+    if self.connection_tested:
+        return self.api_working
 
-        try:
-            if self.client:
-                # 使用更简单的API调用来测试
-                user = self.client.get_me()
-                if user and user.data:
-                    logger.info("🔗 Twitter API连接测试成功")
-                    self.api_working = True
-                    self.connection_tested = True
-                    return True
-                else:
-                    logger.error("❌ Twitter API测试失败：无法获取用户数据")
-                    self.api_working = False
-                    self.connection_tested = True
-        except tweepy.TooManyRequests:
-            logger.warning("⚠️ API连接测试达到速率限制，将稍后重试")
-            self.api_working = False
-            # 不设置connection_tested=True，允许稍后重试
-        except Exception as e:
-            logger.error(f"❌ API连接测试失败: {e}")
+    try:
+        if self.client:
+            # 使用支持Bearer Token的API调用测试
+            user = self.client.get_user(username='twitter')  # 测试Twitter官方账号
+            if user and user.data:
+                logger.info("🔗 Twitter API连接测试成功")
+                self.api_working = True
+                self.connection_tested = True
+                return True
+            else:
+                logger.error("❌ Twitter API测试失败")
+                self.api_working = False
+                self.connection_tested = True
+        else:
             self.api_working = False
             self.connection_tested = True
-        return False
+    except Exception as e:
+        logger.error(f"❌ API连接测试失败: {e}")
+        self.api_working = False
+        self.connection_tested = True
+    return self.api_working
 
     def ensure_connection(self):
         """确保API连接可用，如果未测试则先测试"""
