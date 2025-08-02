@@ -179,92 +179,53 @@ def test_connection(self):
             logger.error(f"❌ 获取 {username} 用户信息时发生错误: {e}")
             return None
 
+class TwitterAPI:
+    # ... 现有的 __init__, test_connection, ensure_connection, get_user_info 方法 ...
+    
+    # 在类的最后添加这个方法：
     def get_user_tweets(self, username, max_results=10, start_time=None, end_time=None):
-        """获取用户推文 - 修复版本，避免404错误"""
+        """获取用户推文"""
         if not self.client:
-            logger.warning(f"Twitter客户端未配置，无法获取 {username} 的推文")
             return []
-
-        if not self.ensure_connection():
-            logger.warning(f"Twitter API连接不可用，跳过获取 {username} 的推文")
-            return []
-
+            
         try:
             username = username.replace('@', '').strip()
-            if not username:
-                logger.warning("用户名为空")
-                return []
-
-            logger.info(f"🔍 正在获取推文: {username}, 最大数量: {max_results}")
-
-            # 首先获取用户信息
             user_response = self.client.get_user(username=username)
             if not user_response or not user_response.data:
-                logger.warning(f"❌ 无法找到用户 {username}")
                 return []
-
+                
             user_id = user_response.data.id
-            logger.info(f"✅ 找到用户 {username}, ID: {user_id}")
-
-            # 限制最大结果数
-            max_results = min(max_results, 100)
-
-            # 使用简化参数避免404错误
-            logger.info(f"🐦 使用简化参数获取推文...")
-
             tweets_response = self.client.get_users_tweets(
                 id=user_id,
-                max_results=max_results,
-                tweet_fields=['created_at', 'public_metrics']  # 只使用基础字段
+                max_results=min(max_results, 50),
+                tweet_fields=['created_at', 'public_metrics']
             )
-
+            
             if not tweets_response or not tweets_response.data:
-                logger.warning(f"ℹ️ 未找到 {username} 的推文")
                 return []
-
-            logger.info(f"📥 API成功返回 {len(tweets_response.data)} 条推文，开始处理...")
-
+                
             result = []
-            for i, tweet in enumerate(tweets_response.data):
-                try:
-                    # 获取互动数据
-                    public_metrics = getattr(tweet, 'public_metrics', {})
-
-                    # 简化的推文类型判断
-                    tweet_type = 'original'
-                    is_reply = False
-
-                    # 简单判断是否为回复
-                    if tweet.text and tweet.text.startswith('@'):
-                        tweet_type = 'reply'
-                        is_reply = True
-
-                    tweet_data = {
-                        'id': str(tweet.id),
-                        'content': tweet.text or '',
-                        'created_at': tweet.created_at.isoformat() if tweet.created_at else None,
-                        'likes': public_metrics.get('like_count', 0),
-                        'retweets': public_metrics.get('retweet_count', 0),
-                        'replies': public_metrics.get('reply_count', 0),
-                        'quotes': public_metrics.get('quote_count', 0),
-                        'author': username,
-                        'type': tweet_type,
-                        'media_urls': [],
-                        'is_retweet': False,
-                        'is_reply': is_reply
-                    }
-
-                    result.append(tweet_data)
-
-                    # 简化的日志
-                    logger.info(f"  📝 推文 {i+1}: {tweet_type} | 👍{public_metrics.get('like_count', 0)}")
-
-                except Exception as e:
-                    logger.error(f"❌ 处理推文 {i+1} 时出错: {e}")
-                    continue
-
-            logger.info(f"✅ 成功处理 {username} 的推文: 获取{len(tweets_response.data)}条，处理{len(result)}条")
+            for tweet in tweets_response.data:
+                public_metrics = getattr(tweet, 'public_metrics', {})
+                result.append({
+                    'id': str(tweet.id),
+                    'content': tweet.text or '',
+                    'created_at': tweet.created_at.isoformat() if tweet.created_at else None,
+                    'likes': public_metrics.get('like_count', 0),
+                    'retweets': public_metrics.get('retweet_count', 0),
+                    'replies': public_metrics.get('reply_count', 0),
+                    'quotes': public_metrics.get('quote_count', 0),
+                    'author': username,
+                    'type': 'original',
+                    'media_urls': [],
+                    'is_retweet': False,
+                    'is_reply': False
+                })
             return result
+            
+        except Exception as e:
+            logger.error(f"获取推文失败: {e}")
+            return []
 
         except tweepy.Unauthorized:
             logger.error(f"❌ 无权访问用户 {username} 的推文，可能是私人账户")
